@@ -8,7 +8,7 @@ exports.PAStrategy = {
         return {
             taxAmount: tax,
             effectiveRate: 0.04,
-            legalText: 'Legislação Estadual do Pará (Aguardando configuração real).',
+            legalText: 'ITCD/PA — alíquota de referência de 4%. Tabela estadual não homologada nesta versão.',
             originalTaxAmount: tax,
             discountValue: 0
         };

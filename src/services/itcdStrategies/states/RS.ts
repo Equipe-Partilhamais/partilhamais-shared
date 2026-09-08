@@ -2,15 +2,17 @@
 import { ItcdStrategy, ItcdStrategyParams, ItcdResult } from '../types';
 import { calculateMarginalTax } from '../utils';
 import { fiscalUnitsApi } from '../../fiscalUnitsApi';
+import { ItcdCalculationMemory } from '../../../types';
 
 export const RSStrategy: ItcdStrategy = {
-    calculate({ baseValue, taxType }: ItcdStrategyParams): ItcdResult {
+    calculate({ baseValue, deathDate, taxType }: ItcdStrategyParams): ItcdResult {
         const safeBaseValue = baseValue || 0;
-        const unit = fiscalUnitsApi.getUnit('RS') || { name: 'UPF-RS', value: 27.24 };
+        const unit = fiscalUnitsApi.requireUnit('RS', { id: 'UPF_RS', name: 'UPF/RS', value: 27.24 }, deathDate);
         const valueInUpf = safeBaseValue / unit.value;
+        const unitInfo = { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio };
 
         let taxInUpf = 0;
-        let memory: any[] = [];
+        let memory: ItcdCalculationMemory[] = [];
         let legalText = '';
 
         if (taxType === 'DOACAO') {
@@ -18,19 +20,19 @@ export const RSStrategy: ItcdStrategy = {
             const result = calculateMarginalTax(valueInUpf, [
                 { limit: 10000, rate: 0.03 },
                 { limit: Infinity, rate: 0.04 }
-            ], { name: unit.name, value: unit.value });
+            ], unitInfo);
             taxInUpf = result.totalTax;
             memory = result.memory;
             legalText = 'Lei nº 8.821/1989. Doação Progressiva Marginal.';
         } else {
             // Regra Causa Mortis RS (da imagem): 2k-10k 3%, 10k-30k 4%, 30k-50k 5%, >50k 6%
             const result = calculateMarginalTax(valueInUpf, [
-                { limit: 2000, rate: 0 }, 
+                { limit: 2000, rate: 0 },
                 { limit: 10000, rate: 0.03 },
                 { limit: 30000, rate: 0.04 },
                 { limit: 50000, rate: 0.05 },
                 { limit: Infinity, rate: 0.06 }
-            ], { name: unit.name, value: unit.value });
+            ], unitInfo);
             taxInUpf = result.totalTax;
             memory = result.memory;
             legalText = 'Lei nº 8.821/1989. Causa Mortis Progressiva Marginal.';
@@ -45,7 +47,13 @@ export const RSStrategy: ItcdStrategy = {
             originalTaxAmount: totalTaxReais,
             discountValue: 0,
             calculationMemory: memory,
-            fiscalUnitUsed: { name: unit.name, value: unit.value }
+            fiscalUnitUsed: {
+                name: unit.name,
+                value: unit.value,
+                vigenciaInicio: unit.vigenciaInicio,
+                source: unit.source,
+                outdated: unit.outdated,
+            },
         };
     }
 };

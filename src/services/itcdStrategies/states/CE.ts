@@ -1,13 +1,13 @@
 
 import { ItcdStrategy, ItcdStrategyParams, ItcdResult } from '../types';
-import { calculateSimpleProgressiveTax } from '../utils';
+import { calculateSimpleProgressiveTax, buildConversionStep } from '../utils';
 import { fiscalUnitsApi } from '../../fiscalUnitsApi';
 
 export const CEStrategy: ItcdStrategy = {
-    calculate({ baseValue }: ItcdStrategyParams): ItcdResult {
+    calculate({ baseValue, deathDate }: ItcdStrategyParams): ItcdResult {
         const safeBaseValue = baseValue || 0;
-        
-        const unit = fiscalUnitsApi.getUnit('CE') || { name: 'UFIRCE', value: 5.95 };
+
+        const unit = fiscalUnitsApi.requireUnit('CE', { id: 'UFIRCE', name: 'UFIRCE', value: 5.95 }, deathDate);
         const valueInUnit = safeBaseValue / unit.value;
 
         // Lei nº 12.670/1996 - Progressivo NÃO cumulativo em UFIRCE
@@ -16,19 +16,16 @@ export const CEStrategy: ItcdStrategy = {
             { limit: 5000, rate: 0.04 },
             { limit: 10000, rate: 0.06 },
             { limit: Infinity, rate: 0.08 }
-        ], { name: unit.name, value: unit.value });
+        ], { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio });
 
         const totalTaxReais = taxInUnit * unit.value;
 
-        const conversionStep = {
-            rangeLabel: `Conversão Base (${unit.name})`,
-            base: safeBaseValue,
-            rate: 0,
-            tax: valueInUnit,
-            isFiscalUnit: true,
-            unitName: unit.name,
-            unitValue: unit.value
-        };
+        const conversionStep = buildConversionStep(
+            `Conversão Base (${unit.name})`,
+            safeBaseValue,
+            valueInUnit,
+            { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio }
+        );
 
         return {
             taxAmount: totalTaxReais,
@@ -37,7 +34,13 @@ export const CEStrategy: ItcdStrategy = {
             originalTaxAmount: totalTaxReais,
             discountValue: 0,
             calculationMemory: [conversionStep, ...memory],
-            fiscalUnitUsed: { name: unit.name, value: unit.value }
+            fiscalUnitUsed: {
+                name: unit.name,
+                value: unit.value,
+                vigenciaInicio: unit.vigenciaInicio,
+                source: unit.source,
+                outdated: unit.outdated,
+            },
         };
     }
 };

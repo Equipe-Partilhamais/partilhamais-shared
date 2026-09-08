@@ -9,7 +9,7 @@ export const RRStrategy: ItcdStrategy = {
         return {
             taxAmount: tax,
             effectiveRate: 0.04,
-            legalText: 'Legislação Estadual de Roraima (Aguardando configuração real).',
+            legalText: 'ITCD/RR — alíquota de referência de 4%. Tabela estadual não homologada nesta versão.',
             originalTaxAmount: tax,
             discountValue: 0
         };

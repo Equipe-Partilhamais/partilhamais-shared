@@ -4,10 +4,11 @@ exports.RSStrategy = void 0;
 const utils_1 = require("../utils");
 const fiscalUnitsApi_1 = require("../../fiscalUnitsApi");
 exports.RSStrategy = {
-    calculate({ baseValue, taxType }) {
+    calculate({ baseValue, deathDate, taxType }) {
         const safeBaseValue = baseValue || 0;
-        const unit = fiscalUnitsApi_1.fiscalUnitsApi.getUnit('RS') || { name: 'UPF-RS', value: 27.24 };
+        const unit = fiscalUnitsApi_1.fiscalUnitsApi.requireUnit('RS', { id: 'UPF_RS', name: 'UPF/RS', value: 27.24 }, deathDate);
         const valueInUpf = safeBaseValue / unit.value;
+        const unitInfo = { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio };
         let taxInUpf = 0;
         let memory = [];
         let legalText = '';
@@ -16,7 +17,7 @@ exports.RSStrategy = {
             const result = (0, utils_1.calculateMarginalTax)(valueInUpf, [
                 { limit: 10000, rate: 0.03 },
                 { limit: Infinity, rate: 0.04 }
-            ], { name: unit.name, value: unit.value });
+            ], unitInfo);
             taxInUpf = result.totalTax;
             memory = result.memory;
             legalText = 'Lei nº 8.821/1989. Doação Progressiva Marginal.';
@@ -29,7 +30,7 @@ exports.RSStrategy = {
                 { limit: 30000, rate: 0.04 },
                 { limit: 50000, rate: 0.05 },
                 { limit: Infinity, rate: 0.06 }
-            ], { name: unit.name, value: unit.value });
+            ], unitInfo);
             taxInUpf = result.totalTax;
             memory = result.memory;
             legalText = 'Lei nº 8.821/1989. Causa Mortis Progressiva Marginal.';
@@ -42,7 +43,13 @@ exports.RSStrategy = {
             originalTaxAmount: totalTaxReais,
             discountValue: 0,
             calculationMemory: memory,
-            fiscalUnitUsed: { name: unit.name, value: unit.value }
+            fiscalUnitUsed: {
+                name: unit.name,
+                value: unit.value,
+                vigenciaInicio: unit.vigenciaInicio,
+                source: unit.source,
+                outdated: unit.outdated,
+            },
         };
     }
 };

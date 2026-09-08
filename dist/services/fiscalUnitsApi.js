@@ -1,29 +1,136 @@
 "use strict";
-// Simula uma API que busca os valores atualizados das SEFAZ estaduais.
-// Em produção, isso pode conectar a um backend que faz scraping diário.
+// Unidades fiscais estaduais (UFIR-RJ, UPF/MT, UFIRCE, UPF-RS, UFESP, UFR-PB, UFEMG).
+// O ITCD é regido pela norma vigente na data do fato gerador (óbito ou doação), portanto o
+// valor da unidade NÃO pode ser "o mais recente": tem de ser o que vigorava naquela competência.
+// Por isso cada UF guarda uma SÉRIE `{ vigenciaInicio, value }` resolvida por data, e não um escalar.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fiscalUnitsApi = void 0;
-// Valores de Referência (Jan/2025 - Estimados/Reais)
-const MOCK_UNITS = {
-    'MT': { id: 'UPF_MT', name: 'UPF/MT', value: 239.51, lastUpdate: '2025-01', description: 'Unidade Padrão Fiscal de Mato Grosso' },
-    'RS': { id: 'UPF_RS', name: 'UPF/RS', value: 27.24, lastUpdate: '2025-01', description: 'Unidade Padrão Fiscal do Rio Grande do Sul' },
-    'CE': { id: 'UFIRCE', name: 'UFIRCE', value: 5.95, lastUpdate: '2025-01', description: 'Unidade Fiscal de Referência do Ceará' },
-    'RJ': { id: 'UFIR_RJ', name: 'UFIR-RJ', value: 4.65, lastUpdate: '2025-01', description: 'Unidade Fiscal de Referência do Rio de Janeiro' },
-    'SP': { id: 'UFESP', name: 'UFESP', value: 36.37, lastUpdate: '2025-01', description: 'Unidade Fiscal do Estado de São Paulo' },
-    'PB': { id: 'UFR_PB', name: 'UFR-PB', value: 67.89, lastUpdate: '2025-01', description: 'Unidade Fiscal de Referência da Paraíba' }
+const REFERENCIA_2025 = 'Valor de referência Jan/2025 — pendente de conferência na SEFAZ estadual';
+// ATENÇÃO: só há um ponto por UF (Jan/2025). Enquanto a série real não for carregada, qualquer
+// fato gerador fora de 2025 cai em `outdated: true`. Ver `listSeriesPendentes()`.
+const SERIES = {
+    MT: {
+        id: 'UPF_MT',
+        name: 'UPF/MT',
+        description: 'Unidade Padrão Fiscal de Mato Grosso',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 239.51, source: REFERENCIA_2025 }],
+    },
+    RS: {
+        id: 'UPF_RS',
+        name: 'UPF/RS',
+        description: 'Unidade Padrão Fiscal do Rio Grande do Sul',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 27.24, source: REFERENCIA_2025 }],
+    },
+    CE: {
+        id: 'UFIRCE',
+        name: 'UFIRCE',
+        description: 'Unidade Fiscal de Referência do Ceará',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 5.95, source: REFERENCIA_2025 }],
+    },
+    RJ: {
+        id: 'UFIR_RJ',
+        name: 'UFIR-RJ',
+        description: 'Unidade Fiscal de Referência do Rio de Janeiro',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 4.65, source: REFERENCIA_2025 }],
+    },
+    SP: {
+        id: 'UFESP',
+        name: 'UFESP',
+        description: 'Unidade Fiscal do Estado de São Paulo',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 36.37, source: REFERENCIA_2025 }],
+    },
+    PB: {
+        id: 'UFR_PB',
+        name: 'UFR-PB',
+        description: 'Unidade Fiscal de Referência da Paraíba',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 67.89, source: REFERENCIA_2025 }],
+    },
+    MG: {
+        id: 'UFEMG',
+        name: 'UFEMG',
+        description: 'Unidade Fiscal do Estado de Minas Gerais',
+        vigencias: [{ vigenciaInicio: '2025-01-01', value: 5.62, source: REFERENCIA_2025 }],
+    },
+};
+const parseDate = (value) => {
+    if (!value)
+        return null;
+    const [y, m, d] = value.split('-').map(Number);
+    if (!y || !m || !d)
+        return null;
+    const parsed = new Date(y, m - 1, d);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const resolveVigencia = (series, referenceDate) => {
+    const ordered = series.vigencias;
+    const target = parseDate(referenceDate);
+    if (!target) {
+        const last = ordered[ordered.length - 1];
+        // Sem data do fato gerador não há como afirmar que o valor é o correto para a competência.
+        return { entry: last, outdated: true };
+    }
+    let chosen = ordered[0];
+    let found = false;
+    for (const entry of ordered) {
+        const start = parseDate(entry.vigenciaInicio);
+        if (start && start.getTime() <= target.getTime()) {
+            chosen = entry;
+            found = true;
+        }
+    }
+    // Fora da cobertura da série: antes do primeiro ponto, ou em ano posterior ao último ponto.
+    const chosenYear = Number(chosen.vigenciaInicio.slice(0, 4));
+    const isLast = chosen === ordered[ordered.length - 1];
+    const outdated = !found || (isLast && target.getFullYear() > chosenYear);
+    return { entry: chosen, outdated };
 };
 exports.fiscalUnitsApi = {
-    // Retorna o valor da unidade fiscal para um estado específico
-    getUnit: (uf) => {
-        return MOCK_UNITS[uf] || null;
+    /**
+     * Valor da unidade fiscal da UF vigente na data informada (data do óbito/doação).
+     * Sem `referenceDate` devolve o último ponto conhecido, já marcado como `outdated`.
+     */
+    getUnit: (uf, referenceDate) => {
+        const series = SERIES[uf];
+        if (!series)
+            return null;
+        const { entry, outdated } = resolveVigencia(series, referenceDate);
+        return {
+            id: series.id,
+            name: series.name,
+            description: series.description,
+            value: entry.value,
+            vigenciaInicio: entry.vigenciaInicio,
+            source: entry.source,
+            outdated,
+        };
     },
-    // Retorna todas as unidades (para configurações ou debug)
-    getAllUnits: () => {
-        return Object.values(MOCK_UNITS);
+    /**
+     * Igual a `getUnit`, mas nunca devolve null: se a UF não tiver série cadastrada, entrega o
+     * fallback já carimbado como desatualizado, para o cálculo não silenciar a ausência de dado.
+     */
+    requireUnit: (uf, fallback, referenceDate) => {
+        const unit = exports.fiscalUnitsApi.getUnit(uf, referenceDate);
+        if (unit)
+            return unit;
+        return {
+            id: fallback.id,
+            name: fallback.name,
+            value: fallback.value,
+            vigenciaInicio: '',
+            source: 'Valor embutido no código — série de vigências não cadastrada para esta UF',
+            description: fallback.name,
+            outdated: true,
+        };
     },
-    // Simula uma atualização forçada (refresh)
-    refreshRates: async () => {
-        await new Promise(r => setTimeout(r, 1000));
-        return true;
-    }
+    getAllUnits: (referenceDate) => Object.keys(SERIES)
+        .map(uf => exports.fiscalUnitsApi.getUnit(uf, referenceDate))
+        .filter((unit) => unit !== null),
+    /** Séries cuja última vigência conhecida é anterior ao ano informado — insumo externo pendente. */
+    listSeriesPendentes: (year) => Object.entries(SERIES)
+        .map(([uf, series]) => ({
+        uf,
+        name: series.name,
+        ultimaVigencia: series.vigencias[series.vigencias.length - 1].vigenciaInicio,
+    }))
+        .filter(item => Number(item.ultimaVigencia.slice(0, 4)) < year),
 };

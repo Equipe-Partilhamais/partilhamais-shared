@@ -19,7 +19,7 @@ export const DFStrategy: ItcdStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'Lei Distrital 3.804/2006. Tabela Progressiva (4%, 5%, 6%).',
+            legalText: 'ITCD/DF — tabela progressiva (4%, 5%, 6%). Faixas não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

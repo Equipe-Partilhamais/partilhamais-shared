@@ -1,9 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.calculateSimpleProgressiveTax = exports.calculateMarginalTax = void 0;
+exports.buildConversionStep = exports.calculateSimpleProgressiveTax = exports.calculateMarginalTax = void 0;
 const formatters_1 = require("../../utils/formatters");
-// As constantes fiscais agora vêm de services/fiscalUnitsApi.ts
-// Este arquivo mantém apenas a lógica matemática pura
+// A memória de cálculo é lida por telas e pelo DOCX entregue ao cliente, que formatam `base` e
+// `tax` com formatCurrency(). Por isso as linhas saem SEMPRE em reais; a expressão na unidade
+// fiscal fica em `valueInUnits`/`rangeLabel`. Sem isso a coluna "Imposto" não fecha com o total.
+const buildBracketMemory = (rangeLabel, amountInTableCurrency, rate, taxInTableCurrency, unitInfo) => ({
+    rangeLabel,
+    base: unitInfo ? amountInTableCurrency * unitInfo.value : amountInTableCurrency,
+    rate,
+    tax: unitInfo ? taxInTableCurrency * unitInfo.value : taxInTableCurrency,
+    isFiscalUnit: !!unitInfo,
+    unitName: unitInfo?.name,
+    unitValue: unitInfo?.value,
+    valueInUnits: unitInfo ? amountInTableCurrency : undefined,
+    unitVigencia: unitInfo?.vigenciaInicio,
+});
 // Helper: Cálculo de Tabela Progressiva Marginal (Por Faixas/Parcelas - Ex: DF, SC, RS, Federal)
 // Aceita valores em R$ ou Unidades Fiscais. Se unitValue for passado, converte os labels.
 const calculateMarginalTax = (value, brackets, unitInfo) => {
@@ -40,15 +52,7 @@ const calculateMarginalTax = (value, brackets, unitInfo) => {
                 else {
                     rangeLabel = `De ${prevStr} a ${limitStr}`;
                 }
-                memory.push({
-                    rangeLabel,
-                    base: taxableAmount, // Valor na moeda original da tabela (pode ser UPF)
-                    rate: bracket.rate,
-                    tax: tax, // Imposto na moeda original
-                    isFiscalUnit: !!unitInfo,
-                    unitName: unitInfo?.name,
-                    unitValue: unitInfo?.value
-                });
+                memory.push(buildBracketMemory(rangeLabel, taxableAmount, bracket.rate, tax, unitInfo));
             }
             previousLimit = bracket.limit;
         }
@@ -71,15 +75,26 @@ const calculateSimpleProgressiveTax = (value, brackets, unitInfo) => {
             return `${(val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ${unitInfo.name}`;
         return (0, formatters_1.formatCurrency)(val);
     };
-    const memory = [{
-            rangeLabel: `Enquadramento (Base Total: ${formatValue(value)})`,
-            base: value,
-            rate: targetBracket.rate,
-            tax: totalTax,
-            isFiscalUnit: !!unitInfo,
-            unitName: unitInfo?.name,
-            unitValue: unitInfo?.value
-        }];
+    const memory = [
+        buildBracketMemory(`Enquadramento (Base Total: ${formatValue(value)})`, value, targetBracket.rate, totalTax, unitInfo),
+    ];
     return { totalTax, memory };
 };
 exports.calculateSimpleProgressiveTax = calculateSimpleProgressiveTax;
+/**
+ * Linha de conversão/enquadramento em unidade fiscal. Não gera imposto — `tax` fica em 0 para
+ * não poluir a soma da coluna "Imposto", e o número em unidades vai em `valueInUnits`.
+ */
+const buildConversionStep = (rangeLabel, baseInReais, valueInUnits, unitInfo) => ({
+    rangeLabel,
+    base: baseInReais,
+    rate: 0,
+    tax: 0,
+    isFiscalUnit: true,
+    unitName: unitInfo.name,
+    unitValue: unitInfo.value,
+    valueInUnits,
+    unitVigencia: unitInfo.vigenciaInicio,
+    isConversionStep: true,
+});
+exports.buildConversionStep = buildConversionStep;

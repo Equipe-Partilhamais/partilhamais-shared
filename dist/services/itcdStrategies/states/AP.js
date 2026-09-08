@@ -14,7 +14,7 @@ exports.APStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'AP: Progressivo por enquadramento (3%, 5%, 6%). Limites de faixa estimados.',
+            legalText: 'ITCD/AP — progressivo por enquadramento (3%, 5%, 6%). Faixas não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

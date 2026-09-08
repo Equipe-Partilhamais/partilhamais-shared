@@ -17,7 +17,7 @@ export const BAStrategy: ItcdStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'Lei nº 7.014/1996. Progressivo por enquadramento.',
+            legalText: 'ITCD/BA — progressivo por enquadramento (Lei nº 7.014/1996). Faixas e alíquota inicial não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

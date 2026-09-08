@@ -1,5 +1,7 @@
 import { ItcdStrategy, ItcdStrategyParams, ItcdResult } from '../types';
 import { fiscalUnitsApi } from '../../fiscalUnitsApi';
+import { buildConversionStep } from '../utils';
+import { ItcdCalculationMemory } from '../../../types';
 
 export const MGStrategy: ItcdStrategy = {
     calculate({ baseValue, deathDate, settings, taxType }: ItcdStrategyParams): ItcdResult {
@@ -8,7 +10,7 @@ export const MGStrategy: ItcdStrategy = {
         // --- REGRA DE DOAÇÃO (MG) ---
         // Base: Lei 14.941/2003
         if (taxType === 'DOACAO') {
-            const unit = fiscalUnitsApi.getUnit('MG') || { name: 'UFEMG', value: 5.62 }; 
+            const unit = fiscalUnitsApi.requireUnit('MG', { id: 'UFEMG', name: 'UFEMG', value: 5.62 }, deathDate);
             const valueInUnit = safeBaseValue / unit.value;
 
             // 1. Alíquota Base: 5% (Conforme correção do usuário)
@@ -17,7 +19,7 @@ export const MGStrategy: ItcdStrategy = {
             let taxAmount = baseTax;
             let discountValue = 0;
             let discountApplied = '';
-            const memory = [];
+            const memory: ItcdCalculationMemory[] = [];
 
             // 2. Desconto do Art. 23-A
             // "Na hipótese de doação cujo valor seja de até 90.000 UFEMGs, será concedido desconto de 50%..."
@@ -27,15 +29,22 @@ export const MGStrategy: ItcdStrategy = {
                 discountApplied = 'Desconto de 50% (Art. 23-A da Lei 14.941/2003)';
             }
 
-            // Memória de Conversão para evidenciar o limite de 90.000 UFEMGs
+            // Memória de Conversão para evidenciar o limite de 90.000 UFEMGs.
+            // A conversão não gera imposto: o valor em UFEMG vai em `valueInUnits`, não na
+            // coluna "Imposto" — senão a soma da memória não fecha com o total devido.
+            memory.push(buildConversionStep(
+                `Valor em ${unit.name} (Limite p/ desconto: 90.000)`,
+                safeBaseValue,
+                valueInUnit,
+                { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio }
+            ));
+
             memory.push({
-                rangeLabel: `Valor em ${unit.name} (Limite p/ desconto: 90.000)`,
+                rangeLabel: 'Alíquota de doação (5%)',
                 base: safeBaseValue,
-                rate: 0,
-                tax: valueInUnit, // Hack visual: mostra o valor em UFEMG na coluna de resultado
-                isFiscalUnit: true,
-                unitName: unit.name,
-                unitValue: unit.value
+                rate: 0.05,
+                tax: baseTax,
+                isFiscalUnit: false
             });
 
             if (discountApplied) {
@@ -56,7 +65,13 @@ export const MGStrategy: ItcdStrategy = {
                 discountValue: discountValue,
                 discountApplied: discountApplied,
                 calculationMemory: memory,
-                fiscalUnitUsed: unit
+                fiscalUnitUsed: {
+                    name: unit.name,
+                    value: unit.value,
+                    vigenciaInicio: unit.vigenciaInicio,
+                    source: unit.source,
+                    outdated: unit.outdated,
+                },
             };
         }
 

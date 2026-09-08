@@ -35,6 +35,9 @@ const calculateNotaryFees = (uf, value, tables, metadata) => {
         rangeLabel: `Faixa: ${range.min.toLocaleString('pt-BR')} a ${range.max === null ? 'Acima' : range.max.toLocaleString('pt-BR')}`,
         isFallback: !stateTable,
         status: 'CALCULATED',
+        source: meta?.source,
+        lastUpdate: meta?.lastUpdate,
+        safetyMargin,
     };
 };
 exports.calculateNotaryFees = calculateNotaryFees;

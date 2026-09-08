@@ -2,13 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MGStrategy = void 0;
 const fiscalUnitsApi_1 = require("../../fiscalUnitsApi");
+const utils_1 = require("../utils");
 exports.MGStrategy = {
     calculate({ baseValue, deathDate, settings, taxType }) {
         const safeBaseValue = baseValue || 0;
         // --- REGRA DE DOAÇÃO (MG) ---
         // Base: Lei 14.941/2003
         if (taxType === 'DOACAO') {
-            const unit = fiscalUnitsApi_1.fiscalUnitsApi.getUnit('MG') || { name: 'UFEMG', value: 5.62 };
+            const unit = fiscalUnitsApi_1.fiscalUnitsApi.requireUnit('MG', { id: 'UFEMG', name: 'UFEMG', value: 5.62 }, deathDate);
             const valueInUnit = safeBaseValue / unit.value;
             // 1. Alíquota Base: 5% (Conforme correção do usuário)
             const baseTax = safeBaseValue * 0.05;
@@ -23,15 +24,16 @@ exports.MGStrategy = {
                 taxAmount = baseTax - discountValue;
                 discountApplied = 'Desconto de 50% (Art. 23-A da Lei 14.941/2003)';
             }
-            // Memória de Conversão para evidenciar o limite de 90.000 UFEMGs
+            // Memória de Conversão para evidenciar o limite de 90.000 UFEMGs.
+            // A conversão não gera imposto: o valor em UFEMG vai em `valueInUnits`, não na
+            // coluna "Imposto" — senão a soma da memória não fecha com o total devido.
+            memory.push((0, utils_1.buildConversionStep)(`Valor em ${unit.name} (Limite p/ desconto: 90.000)`, safeBaseValue, valueInUnit, { name: unit.name, value: unit.value, vigenciaInicio: unit.vigenciaInicio }));
             memory.push({
-                rangeLabel: `Valor em ${unit.name} (Limite p/ desconto: 90.000)`,
+                rangeLabel: 'Alíquota de doação (5%)',
                 base: safeBaseValue,
-                rate: 0,
-                tax: valueInUnit, // Hack visual: mostra o valor em UFEMG na coluna de resultado
-                isFiscalUnit: true,
-                unitName: unit.name,
-                unitValue: unit.value
+                rate: 0.05,
+                tax: baseTax,
+                isFiscalUnit: false
             });
             if (discountApplied) {
                 memory.push({
@@ -50,7 +52,13 @@ exports.MGStrategy = {
                 discountValue: discountValue,
                 discountApplied: discountApplied,
                 calculationMemory: memory,
-                fiscalUnitUsed: unit
+                fiscalUnitUsed: {
+                    name: unit.name,
+                    value: unit.value,
+                    vigenciaInicio: unit.vigenciaInicio,
+                    source: unit.source,
+                    outdated: unit.outdated,
+                },
             };
         }
         // --- REGRA CAUSA MORTIS (MG): 5% Fixo ---

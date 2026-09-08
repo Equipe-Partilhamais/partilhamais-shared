@@ -15,7 +15,7 @@ exports.TOStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'TO: Progressivo por enquadramento (2%, 4%, 6%, 8%). Limites de faixa estimados.',
+            legalText: 'ITCD/TO — progressivo por enquadramento (2%, 4%, 6%, 8%). Faixas não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

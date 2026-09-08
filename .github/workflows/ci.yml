@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Typecheck (fonte + testes)
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Os apps consomem este pacote como git-dependency e importam ./dist direto do
+      # repositório, então um dist defasado publica um motor de cálculo diferente do fonte.
+      # --ignore-cr-at-eol porque o dist é gerado no Windows (CRLF) e no runner (LF).
+      - name: Garantir que o dist commitado está em dia com o fonte
+        run: |
+          novos=$(git ls-files --others --exclude-standard -- dist)
+          if [ -n "$novos" ]; then
+            echo "Arquivos novos em dist/ não commitados:"
+            echo "$novos"
+            exit 1
+          fi
+          if ! git diff --quiet --ignore-cr-at-eol -- dist; then
+            echo "dist/ desatualizado — rode 'npm run build' e commite o resultado."
+            git diff --ignore-cr-at-eol --stat -- dist
+            exit 1
+          fi

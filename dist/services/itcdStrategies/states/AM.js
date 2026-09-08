@@ -14,7 +14,7 @@ exports.AMStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'AM: Progressivo por enquadramento (2%, 3%, 4%). Limites de faixa estimados.',
+            legalText: 'ITCD/AM — progressivo por enquadramento (2%, 3%, 4%). Faixas não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

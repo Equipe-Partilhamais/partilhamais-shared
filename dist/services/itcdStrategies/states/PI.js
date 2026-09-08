@@ -8,7 +8,7 @@ exports.PIStrategy = {
         return {
             taxAmount: tax,
             effectiveRate: 0.04,
-            legalText: 'Legislação Estadual do Piauí (Aguardando configuração real).',
+            legalText: 'ITCD/PI — alíquota de referência de 4%. Tabela estadual não homologada nesta versão.',
             originalTaxAmount: tax,
             discountValue: 0
         };

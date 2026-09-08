@@ -10,7 +10,7 @@ export const ACStrategy: ItcdStrategy = {
         return {
             taxAmount: tax,
             effectiveRate: 0.04,
-            legalText: 'Legislação Estadual do Acre (Aguardando configuração real).',
+            legalText: 'ITCD/AC — alíquota de referência de 4%. Tabela estadual não homologada nesta versão.',
             originalTaxAmount: tax,
             discountValue: 0
         };
