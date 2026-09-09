@@ -1,3 +1,4 @@
+export * from './services/successionCore';
 export * from './services/itcdStrategies';
 export * from './services/notaryFeeEngine';
 export * from './services/fiscalUnitsApi';

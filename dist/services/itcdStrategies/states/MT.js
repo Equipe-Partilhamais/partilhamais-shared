@@ -34,6 +34,7 @@ exports.MTStrategy = {
                 vigenciaInicio: unit.vigenciaInicio,
                 source: unit.source,
                 outdated: unit.outdated,
+                conferida: unit.conferida,
             },
         };
     }

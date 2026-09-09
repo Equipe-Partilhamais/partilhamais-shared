@@ -11,6 +11,15 @@ describe('séries de unidades fiscais', () => {
         expect(unidade!.outdated).toBe(false);
     });
 
+    it('nenhum ponto da série está conferido na SEFAZ, mesmo cobrindo a data', () => {
+        // Cobrir a vigência não é ter conferido o índice: a série inteira é referencial.
+        const dentroDaVigencia = fiscalUnitsApi.getUnit('RJ', '2025-06-15')!;
+
+        expect(dentroDaVigencia.outdated).toBe(false);
+        expect(dentroDaVigencia.conferida).toBe(false);
+        expect(fiscalUnitsApi.getAllUnits('2025-06-15').every(u => u.conferida === false)).toBe(true);
+    });
+
     it('marca como desatualizado quando a série não cobre a data do fato gerador', () => {
         // A série vai até Jan/2025; um óbito em 2026 usa índice de outra competência.
         expect(fiscalUnitsApi.getUnit('RJ', '2026-03-10')!.outdated).toBe(true);
@@ -30,19 +39,26 @@ describe('séries de unidades fiscais', () => {
         expect(pendentes).toEqual(['CE', 'MG', 'PB', 'RJ', 'RS', 'SP', 'MT'].sort());
     });
 
-    it('UF sem série cadastrada volta com fallback marcado como desatualizado', () => {
+    it('UF sem série cadastrada volta com fallback marcado como desatualizado e não conferido', () => {
         const unidade = fiscalUnitsApi.requireUnit('AC', { id: 'X', name: 'X', value: 1 }, '2025-06-15');
 
         expect(unidade.outdated).toBe(true);
+        expect(unidade.conferida).toBe(false);
         expect(unidade.value).toBe(1);
     });
 
-    it('o motor expõe a vigência usada e avisa quando ela não cobre o óbito', () => {
+    it('o motor avisa que o índice não foi conferido, mesmo dentro da vigência', () => {
+        // Era aqui que o defeito se escondia: para óbito em 2025 o cálculo saía sem ressalva
+        // nenhuma sobre um índice que o próprio arquivo declara não conferido.
         const dentroDaVigencia = calculateItcdForState('RJ', 1_000_000, {}, '2025-06-15', 'CAUSA_MORTIS');
         expect(dentroDaVigencia.fiscalUnitUsed!.vigenciaInicio).toBe('2025-01-01');
         expect(dentroDaVigencia.fiscalUnitUsed!.outdated).toBe(false);
-        expect(dentroDaVigencia.warningMessage).toBeUndefined();
+        expect(dentroDaVigencia.fiscalUnitUsed!.conferida).toBe(false);
+        expect(dentroDaVigencia.warningMessage).toContain('é referencial e não foi conferido');
+        expect(dentroDaVigencia.warningMessage).not.toContain('não cobre a data do fato gerador');
+    });
 
+    it('o motor expõe a vigência usada e avisa quando ela não cobre o óbito', () => {
         const foraDaVigencia = calculateItcdForState('RJ', 1_000_000, {}, '2026-03-10', 'CAUSA_MORTIS');
         expect(foraDaVigencia.fiscalUnitUsed!.outdated).toBe(true);
         expect(foraDaVigencia.warningMessage).toContain('não cobre a data do fato gerador');

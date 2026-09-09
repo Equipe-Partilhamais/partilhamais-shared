@@ -1,7 +1,7 @@
 
 import { UF } from '../../types';
-import { ItcdStrategy, ItcdTaxType, ItcdResult, ItcdReliability, ItcdUfNaoConfiguradaError } from './types';
-import { getHomologacao, isHomologada } from './homologacao';
+import { ItcdStrategy, ItcdTaxType, ItcdResult, ItcdReliability } from './types';
+import { getHomologacao, getPendencia, isHomologada } from './homologacao';
 import { MGStrategy } from './states/MG';
 import { SPStrategy } from './states/SP';
 import { RJStrategy } from './states/RJ';
@@ -84,7 +84,7 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         if (!registro) {
             pendenciaHomologacao = `UF "${uf}" sem estratégia própria; cálculo feito pela regra padrão nacional (4%).`;
         } else {
-            pendenciaHomologacao = registro.pendencia;
+            pendenciaHomologacao = getPendencia(uf, taxType);
         }
 
         if (taxType === 'DOACAO') {
@@ -102,14 +102,26 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         );
     }
 
-    // A unidade fiscal tem de ser a vigente na data do fato gerador; quando a série não cobre
-    // essa data o número sai do último ponto conhecido e isso precisa aparecer.
     const unidade = result.fiscalUnitUsed;
-    if (unidade?.outdated) {
-        warningMessage = appendWarning(
-            warningMessage,
-            `Valor de ${unidade.name} usado (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) não cobre a data do fato gerador. Confirme o índice da competência.`
-        );
+    if (unidade) {
+        // "Cobrir a data do fato gerador" e "estar conferido" são coisas diferentes. A série de
+        // hoje tem um único ponto por UF, que ninguém conferiu: se o aviso dependesse só de
+        // `outdated`, o óbito de 2025 — o caso mais comum — sairia sem ressalva nenhuma sobre um
+        // índice que determina o enquadramento da faixa (no RJ, 6% ou 8%).
+        if (unidade.conferida === false) {
+            warningMessage = appendWarning(
+                warningMessage,
+                `Valor de ${unidade.name} (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) é referencial e não foi conferido na SEFAZ/${uf}.`
+            );
+        }
+        // A unidade fiscal tem de ser a vigente na data do fato gerador; quando a série não
+        // cobre essa data o número sai do último ponto conhecido e isso precisa aparecer.
+        if (unidade.outdated) {
+            warningMessage = appendWarning(
+                warningMessage,
+                `Valor de ${unidade.name} usado (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) não cobre a data do fato gerador. Confirme o índice da competência.`
+            );
+        }
     }
 
     return {
@@ -123,16 +135,4 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
 export const calculateItcdForState = (uf: UF, baseValue: number, settings: any, deathDate?: string, taxType: ItcdTaxType = 'CAUSA_MORTIS'): ItcdResult => {
     const strategy = strategies[uf] || DefaultStrategy;
     return stampReliability(uf, taxType, strategy.calculate({ baseValue, settings, deathDate, taxType }));
-};
-
-/**
- * Mesma conta, mas recusa devolver número para UF/tipo sem tabela homologada.
- * Use nos fluxos que produzem documento oficial (guia, escritura, petição).
- */
-export const calculateItcdForStateStrict = (uf: UF, baseValue: number, settings: any, deathDate?: string, taxType: ItcdTaxType = 'CAUSA_MORTIS'): ItcdResult => {
-    const result = calculateItcdForState(uf, baseValue, settings, deathDate, taxType);
-    if (result.confiabilidade !== 'HOMOLOGADA') {
-        throw new ItcdUfNaoConfiguradaError(uf, taxType, result.pendenciaHomologacao);
-    }
-    return result;
 };

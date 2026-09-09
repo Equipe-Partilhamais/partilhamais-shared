@@ -16,6 +16,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 Object.defineProperty(exports, "__esModule", { value: true });
 // @partilhamais/shared — engine de cálculo compartilhado entre backend e frontend.
 // Fonte ÚNICA da lógica de ITCD/honorários (evita a divergência FE/BE — bug B7).
+__exportStar(require("./services/successionCore"), exports);
 __exportStar(require("./services/itcdStrategies"), exports);
 __exportStar(require("./services/notaryFeeEngine"), exports);
 __exportStar(require("./services/fiscalUnitsApi"), exports);

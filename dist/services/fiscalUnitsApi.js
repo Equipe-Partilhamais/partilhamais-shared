@@ -6,6 +6,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fiscalUnitsApi = void 0;
 const REFERENCIA_2025 = 'Valor de referência Jan/2025 — pendente de conferência na SEFAZ estadual';
+// Nenhum ponto da série foi conferido ainda; ver `conferida` em FiscalUnitVigencia.
+const PONTO_REFERENCIAL = (vigenciaInicio, value) => ({
+    vigenciaInicio,
+    value,
+    source: REFERENCIA_2025,
+    conferida: false,
+});
 // ATENÇÃO: só há um ponto por UF (Jan/2025). Enquanto a série real não for carregada, qualquer
 // fato gerador fora de 2025 cai em `outdated: true`. Ver `listSeriesPendentes()`.
 const SERIES = {
@@ -13,43 +20,43 @@ const SERIES = {
         id: 'UPF_MT',
         name: 'UPF/MT',
         description: 'Unidade Padrão Fiscal de Mato Grosso',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 239.51, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 239.51)],
     },
     RS: {
         id: 'UPF_RS',
         name: 'UPF/RS',
         description: 'Unidade Padrão Fiscal do Rio Grande do Sul',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 27.24, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 27.24)],
     },
     CE: {
         id: 'UFIRCE',
         name: 'UFIRCE',
         description: 'Unidade Fiscal de Referência do Ceará',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 5.95, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 5.95)],
     },
     RJ: {
         id: 'UFIR_RJ',
         name: 'UFIR-RJ',
         description: 'Unidade Fiscal de Referência do Rio de Janeiro',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 4.65, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 4.65)],
     },
     SP: {
         id: 'UFESP',
         name: 'UFESP',
         description: 'Unidade Fiscal do Estado de São Paulo',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 36.37, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 36.37)],
     },
     PB: {
         id: 'UFR_PB',
         name: 'UFR-PB',
         description: 'Unidade Fiscal de Referência da Paraíba',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 67.89, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 67.89)],
     },
     MG: {
         id: 'UFEMG',
         name: 'UFEMG',
         description: 'Unidade Fiscal do Estado de Minas Gerais',
-        vigencias: [{ vigenciaInicio: '2025-01-01', value: 5.62, source: REFERENCIA_2025 }],
+        vigencias: [PONTO_REFERENCIAL('2025-01-01', 5.62)],
     },
 };
 const parseDate = (value) => {
@@ -102,6 +109,7 @@ exports.fiscalUnitsApi = {
             vigenciaInicio: entry.vigenciaInicio,
             source: entry.source,
             outdated,
+            conferida: entry.conferida,
         };
     },
     /**
@@ -120,6 +128,7 @@ exports.fiscalUnitsApi = {
             source: 'Valor embutido no código — série de vigências não cadastrada para esta UF',
             description: fallback.name,
             outdated: true,
+            conferida: false,
         };
     },
     getAllUnits: (referenceDate) => Object.keys(SERIES)

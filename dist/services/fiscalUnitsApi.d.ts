@@ -3,6 +3,13 @@ export interface FiscalUnitVigencia {
     vigenciaInicio: string;
     value: number;
     source: string;
+    /**
+     * O valor foi conferido na SEFAZ estadual por um responsável identificado?
+     * Cobrir a data do fato gerador NÃO é o mesmo que estar conferido: o ponto de Jan/2025
+     * é referencial, e o enquadramento por faixa depende dele (no RJ, a UFIR define se a
+     * base cai em 6% ou 8%). Enquanto for `false`, o cálculo sai com ressalva.
+     */
+    conferida: boolean;
 }
 export interface FiscalUnit {
     id: string;
@@ -16,6 +23,8 @@ export interface FiscalUnit {
      * conhecido. Quem exibe o cálculo precisa ressalvar — o número está desatualizado.
      */
     outdated: boolean;
+    /** false enquanto ninguém conferiu o índice na SEFAZ estadual. Independe de `outdated`. */
+    conferida: boolean;
 }
 export declare const fiscalUnitsApi: {
     /**

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
     calculateItcdForState,
-    calculateItcdForStateStrict,
+    getConferencia,
     ITCD_HOMOLOGACAO,
-    ItcdUfNaoConfiguradaError,
+    isHomologada,
     listUfsNaoConfiguradas,
 } from '../services/itcdStrategies';
 import { UF } from '../types';
@@ -11,32 +11,42 @@ import { UF } from '../types';
 const OBITO = '2025-06-15';
 const SETTINGS = { applyInventoryDiscount: false };
 
-// As 12 UFs cuja tabela o próprio código declarava estimada/pendente.
-const NAO_CONFIGURADAS: UF[] = ['AC', 'AM', 'AP', 'BA', 'DF', 'MA', 'PA', 'PI', 'PR', 'RO', 'RR', 'TO'];
 const TODAS_AS_UFS = Object.keys(ITCD_HOMOLOGACAO) as UF[];
 
-describe('homologação das tabelas de ITCD', () => {
-    it('as 12 UFs sem tabela conferida vêm marcadas como NAO_CONFIGURADA', () => {
-        expect(listUfsNaoConfiguradas('CAUSA_MORTIS').sort()).toEqual([...NAO_CONFIGURADAS].sort());
+describe('conferência das tabelas de ITCD', () => {
+    // A regressão que este bloco impede: marcar UF como homologada porque o código já citava
+    // uma lei. A norma citada é rastreabilidade; homologação exige assinatura de quem conferiu.
+    it('nenhuma UF está homologada enquanto ninguém assinar a conferência', () => {
+        expect(listUfsNaoConfiguradas('CAUSA_MORTIS').sort()).toEqual([...TODAS_AS_UFS].sort());
+        expect(listUfsNaoConfiguradas('DOACAO').sort()).toEqual([...TODAS_AS_UFS].sort());
+
+        TODAS_AS_UFS.forEach(uf => {
+            expect(getConferencia(uf, 'CAUSA_MORTIS')).toBeUndefined();
+            expect(getConferencia(uf, 'DOACAO')).toBeUndefined();
+        });
     });
 
-    it.each(NAO_CONFIGURADAS)('%s carimba confiabilidade, pendência e aviso no resultado', (uf) => {
+    it('norma citada no código não homologa: só a conferência assinada homologa', () => {
+        const comNormaCitada = TODAS_AS_UFS.filter(uf => !!ITCD_HOMOLOGACAO[uf].normaCitadaNoCodigo);
+
+        expect(comNormaCitada.length).toBeGreaterThan(0);
+        comNormaCitada.forEach(uf => expect(isHomologada(uf, 'CAUSA_MORTIS')).toBe(false));
+
+        // O registro precisa continuar aceitando a citação quando o parecer chegar.
+        const registro = {
+            ...ITCD_HOMOLOGACAO.SP,
+            causaMortis: { conferidaPor: 'Fulano', conferidaEm: '2026-01-02', referencia: 'Norma X, art. Y' },
+        };
+        expect(registro.causaMortis.conferidaPor).toBe('Fulano');
+    });
+
+    it.each(TODAS_AS_UFS)('%s carimba confiabilidade, pendência e aviso no resultado', (uf) => {
         const resultado = calculateItcdForState(uf, 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS');
 
         expect(resultado.confiabilidade).toBe('NAO_CONFIGURADA');
         expect(resultado.pendenciaHomologacao).toBeTruthy();
         expect(resultado.warningMessage).toContain(`SEFAZ/${uf}`);
     });
-
-    it.each(TODAS_AS_UFS.filter(uf => !NAO_CONFIGURADAS.includes(uf)))(
-        '%s está homologada para causa mortis e sai sem ressalva de tabela',
-        (uf) => {
-            const resultado = calculateItcdForState(uf, 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS');
-
-            expect(resultado.confiabilidade).toBe('HOMOLOGADA');
-            expect(resultado.warningMessage || '').not.toContain('não está homologada');
-        }
-    );
 
     // O texto de placeholder era impresso no DOCX entregue ao cliente.
     it.each(TODAS_AS_UFS)('%s não publica texto de rascunho no legalText', (uf) => {
@@ -49,14 +59,6 @@ describe('homologação das tabelas de ITCD', () => {
         expect(legalText.toLowerCase()).not.toContain('da imagem');
     });
 
-    it('modo estrito recusa devolver número para UF não configurada', () => {
-        expect(() => calculateItcdForStateStrict('PR', 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS'))
-            .toThrow(ItcdUfNaoConfiguradaError);
-
-        expect(calculateItcdForStateStrict('SP', 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS').taxAmount)
-            .toBeCloseTo(40_000, 2);
-    });
-
     it('UF fora do registro cai na regra padrão e nunca sai como homologada', () => {
         const resultado = calculateItcdForState('XX' as UF, 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS');
 
@@ -67,23 +69,12 @@ describe('homologação das tabelas de ITCD', () => {
 });
 
 describe('ITCD de doação (excesso de partilha)', () => {
-    const COM_TABELA_DE_DOACAO: UF[] = ['MG', 'RS', 'SP'];
+    it.each(TODAS_AS_UFS)('%s avisa que a doação foi calculada com a regra de causa mortis', (uf) => {
+        const doacao = calculateItcdForState(uf, 1_000_000, SETTINGS, OBITO, 'DOACAO');
 
-    it('só MG, RS e SP têm tabela de doação homologada', () => {
-        expect(listUfsNaoConfiguradas('DOACAO').sort()).toEqual(
-            TODAS_AS_UFS.filter(uf => !COM_TABELA_DE_DOACAO.includes(uf)).sort()
-        );
+        expect(doacao.confiabilidade).toBe('NAO_CONFIGURADA');
+        expect(doacao.warningMessage).toContain('Alíquota de doação não homologada');
     });
-
-    it.each(TODAS_AS_UFS.filter(uf => !COM_TABELA_DE_DOACAO.includes(uf)))(
-        '%s avisa que a doação foi calculada com a regra de causa mortis',
-        (uf) => {
-            const doacao = calculateItcdForState(uf, 1_000_000, SETTINGS, OBITO, 'DOACAO');
-
-            expect(doacao.confiabilidade).toBe('NAO_CONFIGURADA');
-            expect(doacao.warningMessage).toContain('Alíquota de doação não homologada');
-        }
-    );
 
     it('RS aplica a tabela de doação, distinta da de causa mortis', () => {
         const causaMortis = calculateItcdForState('RS', 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS');
@@ -92,7 +83,6 @@ describe('ITCD de doação (excesso de partilha)', () => {
         // Doação: 10.000 UPF x 3% + 26.710,7195 UPF x 4% = 1.368,4288 UPF -> x 27,24
         expect(doacao.taxAmount).toBeCloseTo(37_276.0, 1);
         expect(doacao.taxAmount).not.toBeCloseTo(causaMortis.taxAmount, 2);
-        expect(doacao.confiabilidade).toBe('HOMOLOGADA');
     });
 
     it('MG aplica a regra de doação (5% com desconto do art. 23-A)', () => {
@@ -100,15 +90,13 @@ describe('ITCD de doação (excesso de partilha)', () => {
 
         expect(doacao.taxAmount).toBeCloseTo(2_500, 2);
         expect(doacao.discountApplied).toContain('23-A');
-        expect(doacao.confiabilidade).toBe('HOMOLOGADA');
     });
 
-    it('SP cobra 4% nos dois fatos geradores, e isso está declarado na homologação', () => {
+    it('SP cobra 4% nos dois fatos geradores, e a norma citada fica registrada', () => {
         const causaMortis = calculateItcdForState('SP', 1_000_000, SETTINGS, OBITO, 'CAUSA_MORTIS');
         const doacao = calculateItcdForState('SP', 1_000_000, SETTINGS, OBITO, 'DOACAO');
 
         expect(doacao.taxAmount).toBeCloseTo(causaMortis.taxAmount, 2);
-        expect(doacao.confiabilidade).toBe('HOMOLOGADA');
-        expect(ITCD_HOMOLOGACAO.SP.fonte).toContain('10.705');
+        expect(ITCD_HOMOLOGACAO.SP.normaCitadaNoCodigo).toContain('10.705');
     });
 });

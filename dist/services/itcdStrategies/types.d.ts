@@ -13,6 +13,12 @@ export interface ItcdFiscalUnitUsed {
     source?: string;
     /** A série não cobre a data do fato gerador; o valor é o último conhecido. */
     outdated?: boolean;
+    /**
+     * O índice foi conferido na SEFAZ estadual? Independe de `outdated`: um valor pode
+     * cobrir a data do fato gerador e mesmo assim nunca ter sido conferido, que é a
+     * situação de TODAS as séries hoje.
+     */
+    conferida?: boolean;
 }
 export interface ItcdResult {
     taxAmount: number;
@@ -43,11 +49,4 @@ export interface ItcdStrategyParams {
 }
 export interface ItcdStrategy {
     calculate(params: ItcdStrategyParams): ItcdResult;
-}
-/** Erro do modo estrito: a UF/tipo pedido não tem tabela homologada, então não há número a devolver. */
-export declare class ItcdUfNaoConfiguradaError extends Error {
-    readonly uf: string;
-    readonly taxType: ItcdTaxType;
-    readonly pendencia?: string;
-    constructor(uf: string, taxType: ItcdTaxType, pendencia?: string);
 }
