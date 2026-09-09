@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MGStrategy = void 0;
 const fiscalUnitsApi_1 = require("../../fiscalUnitsApi");
 const utils_1 = require("../utils");
+const warnings_1 = require("../warnings");
 exports.MGStrategy = {
     calculate({ baseValue, deathDate, settings, taxType }) {
         const safeBaseValue = baseValue || 0;
@@ -85,11 +86,11 @@ exports.MGStrategy = {
                 // Add 90 days to death date
                 const limitDate = new Date(death);
                 limitDate.setDate(limitDate.getDate() + 90);
-                warningMessage = `Prazo de 90 dias para desconto expirou em ${limitDate.toLocaleDateString('pt-BR')}.`;
+                warningMessage = (0, warnings_1.avisoPrazoDescontoExpirado)(90, limitDate.toLocaleDateString('pt-BR'));
             }
         }
         else if (settings?.applyInventoryDiscount) {
-            warningMessage = 'Data do óbito não informada. Desconto não calculado.';
+            warningMessage = (0, warnings_1.avisoDescontoSemDataDoObito)();
         }
         return {
             taxAmount: tax,

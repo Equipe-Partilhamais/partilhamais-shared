@@ -14,6 +14,14 @@ import { ItcdTaxType } from './types';
 // Para homologar uma UF quando o parecer tributário chegar: preencha `normaCitadaNoCodigo`
 // com a norma + artigo + início de vigência efetivamente conferidos e `conferidaPor`/
 // `conferidaEm` com quem conferiu e quando. Não invente nem alíquota nem citação.
+//
+// MODO ESTRITO — decisão registrada: existiu um `calculateItcdForStateStrict` (e o erro
+// `ItcdUfNaoConfiguradaError`) que recusava calcular UF não homologada. Foi REMOVIDO por não
+// ter nenhum chamador e por lançar em 100% dos casos enquanto nenhuma UF tem conferência
+// assinada — um modo que sempre falha não protege ninguém, só some do radar. GATILHO PARA
+// REINSTALAR: quando a primeira UF for homologada aqui, vale reintroduzir o estrito como
+// invólucro de `calculateItcdForState` (lança quando `confiabilidade !== 'HOMOLOGADA'`), para
+// os caminhos que não podem publicar número referencial — emissão de guia, por exemplo.
 
 /** Assinatura humana da conferência. Sem ela nenhuma UF é homologada. */
 export interface ConferenciaHumana {

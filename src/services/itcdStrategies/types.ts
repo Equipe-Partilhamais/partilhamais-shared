@@ -9,6 +9,18 @@ export type ItcdTaxType = 'CAUSA_MORTIS' | 'DOACAO';
  */
 export type ItcdReliability = 'HOMOLOGADA' | 'NAO_CONFIGURADA';
 
+/**
+ * Natureza da ressalva. Todas viajam no mesmo `warningMessage`, então sem esta classificação
+ * o consumidor não tem como distinguir "tabela não conferida" de "prazo de desconto vencido"
+ * ou de "competência indefinida" — e acaba rotulando os três com o texto de um só.
+ */
+export type ItcdWarningCategory =
+    | 'TABELA_NAO_HOMOLOGADA'
+    | 'INDICE_FISCAL'
+    | 'COMPETENCIA'
+    | 'PRAZO'
+    | 'OUTRO';
+
 export interface ItcdFiscalUnitUsed {
     name: string;
     value: number;
@@ -21,8 +33,12 @@ export interface ItcdFiscalUnitUsed {
      * O índice foi conferido na SEFAZ estadual? Independe de `outdated`: um valor pode
      * cobrir a data do fato gerador e mesmo assim nunca ter sido conferido, que é a
      * situação de TODAS as séries hoje.
+     *
+     * OBRIGATÓRIO de propósito: quando era opcional, a estratégia que esquecesse de repassar
+     * o campo perdia a ressalva em silêncio — nem o compilador nem a suíte acusavam. Agora
+     * esquecer é erro de compilação.
      */
-    conferida?: boolean;
+    conferida: boolean;
 }
 
 export interface ItcdResult {

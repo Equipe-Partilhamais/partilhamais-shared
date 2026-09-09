@@ -1,6 +1,7 @@
 import { ItcdStrategy, ItcdStrategyParams, ItcdResult } from '../types';
 import { fiscalUnitsApi } from '../../fiscalUnitsApi';
 import { buildConversionStep } from '../utils';
+import { avisoDescontoSemDataDoObito, avisoPrazoDescontoExpirado } from '../warnings';
 import { ItcdCalculationMemory } from '../../../types';
 
 export const MGStrategy: ItcdStrategy = {
@@ -101,10 +102,10 @@ export const MGStrategy: ItcdStrategy = {
                 // Add 90 days to death date
                 const limitDate = new Date(death);
                 limitDate.setDate(limitDate.getDate() + 90);
-                warningMessage = `Prazo de 90 dias para desconto expirou em ${limitDate.toLocaleDateString('pt-BR')}.`;
+                warningMessage = avisoPrazoDescontoExpirado(90, limitDate.toLocaleDateString('pt-BR'));
             }
         } else if (settings?.applyInventoryDiscount) {
-            warningMessage = 'Data do óbito não informada. Desconto não calculado.';
+            warningMessage = avisoDescontoSemDataDoObito();
         }
 
         return {

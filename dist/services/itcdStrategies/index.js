@@ -16,6 +16,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateItcdForState = void 0;
 const homologacao_1 = require("./homologacao");
+const warnings_1 = require("./warnings");
 const MG_1 = require("./states/MG");
 const SP_1 = require("./states/SP");
 const RJ_1 = require("./states/RJ");
@@ -46,6 +47,7 @@ const TO_1 = require("./states/TO");
 const Default_1 = require("./states/Default");
 __exportStar(require("./homologacao"), exports);
 __exportStar(require("./types"), exports);
+__exportStar(require("./warnings"), exports);
 const strategies = {
     'AC': AC_1.ACStrategy,
     'AL': AL_1.ALStrategy,
@@ -97,9 +99,9 @@ const stampReliability = (uf, taxType, result) => {
         if (taxType === 'DOACAO') {
             // O motor devolve o número da regra de causa mortis; sem este aviso o usuário
             // recebe um cálculo de doação com alíquota que ninguém conferiu.
-            warningMessage = appendWarning(warningMessage, `Alíquota de doação não homologada para ${uf}: valor calculado com a regra de causa mortis.`);
+            warningMessage = appendWarning(warningMessage, (0, warnings_1.avisoAliquotaDoacaoNaoHomologada)(uf));
         }
-        warningMessage = appendWarning(warningMessage, `Valor referencial: a tabela de ITCD de ${uf} não está homologada no PartilhaMais. Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`);
+        warningMessage = appendWarning(warningMessage, (0, warnings_1.avisoTabelaNaoHomologada)(uf));
     }
     const unidade = result.fiscalUnitUsed;
     if (unidade) {
@@ -107,13 +109,15 @@ const stampReliability = (uf, taxType, result) => {
         // hoje tem um único ponto por UF, que ninguém conferiu: se o aviso dependesse só de
         // `outdated`, o óbito de 2025 — o caso mais comum — sairia sem ressalva nenhuma sobre um
         // índice que determina o enquadramento da faixa (no RJ, 6% ou 8%).
-        if (unidade.conferida === false) {
-            warningMessage = appendWarning(warningMessage, `Valor de ${unidade.name} (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) é referencial e não foi conferido na SEFAZ/${uf}.`);
+        // `!== true` e não `=== false`: dado ausente (payload persistido antigo, estratégia
+        // que venha a montar o objeto fora do tipo) significa RESSALVA, não silêncio.
+        if (unidade.conferida !== true) {
+            warningMessage = appendWarning(warningMessage, (0, warnings_1.avisoIndiceNaoConferido)(uf, unidade.name, unidade.value, unidade.vigenciaInicio));
         }
         // A unidade fiscal tem de ser a vigente na data do fato gerador; quando a série não
         // cobre essa data o número sai do último ponto conhecido e isso precisa aparecer.
         if (unidade.outdated) {
-            warningMessage = appendWarning(warningMessage, `Valor de ${unidade.name} usado (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) não cobre a data do fato gerador. Confirme o índice da competência.`);
+            warningMessage = appendWarning(warningMessage, (0, warnings_1.avisoIndiceForaDaVigencia)(unidade.name, unidade.value, unidade.vigenciaInicio));
         }
     }
     return {

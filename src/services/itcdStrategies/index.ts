@@ -2,6 +2,12 @@
 import { UF } from '../../types';
 import { ItcdStrategy, ItcdTaxType, ItcdResult, ItcdReliability } from './types';
 import { getHomologacao, getPendencia, isHomologada } from './homologacao';
+import {
+    avisoAliquotaDoacaoNaoHomologada,
+    avisoIndiceForaDaVigencia,
+    avisoIndiceNaoConferido,
+    avisoTabelaNaoHomologada,
+} from './warnings';
 import { MGStrategy } from './states/MG';
 import { SPStrategy } from './states/SP';
 import { RJStrategy } from './states/RJ';
@@ -33,6 +39,7 @@ import { DefaultStrategy } from './states/Default';
 
 export * from './homologacao';
 export * from './types';
+export * from './warnings';
 
 const strategies: Record<string, ItcdStrategy> = {
     'AC': ACStrategy,
@@ -90,16 +97,10 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         if (taxType === 'DOACAO') {
             // O motor devolve o número da regra de causa mortis; sem este aviso o usuário
             // recebe um cálculo de doação com alíquota que ninguém conferiu.
-            warningMessage = appendWarning(
-                warningMessage,
-                `Alíquota de doação não homologada para ${uf}: valor calculado com a regra de causa mortis.`
-            );
+            warningMessage = appendWarning(warningMessage, avisoAliquotaDoacaoNaoHomologada(uf));
         }
 
-        warningMessage = appendWarning(
-            warningMessage,
-            `Valor referencial: a tabela de ITCD de ${uf} não está homologada no PartilhaMais. Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`
-        );
+        warningMessage = appendWarning(warningMessage, avisoTabelaNaoHomologada(uf));
     }
 
     const unidade = result.fiscalUnitUsed;
@@ -108,10 +109,12 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         // hoje tem um único ponto por UF, que ninguém conferiu: se o aviso dependesse só de
         // `outdated`, o óbito de 2025 — o caso mais comum — sairia sem ressalva nenhuma sobre um
         // índice que determina o enquadramento da faixa (no RJ, 6% ou 8%).
-        if (unidade.conferida === false) {
+        // `!== true` e não `=== false`: dado ausente (payload persistido antigo, estratégia
+        // que venha a montar o objeto fora do tipo) significa RESSALVA, não silêncio.
+        if (unidade.conferida !== true) {
             warningMessage = appendWarning(
                 warningMessage,
-                `Valor de ${unidade.name} (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) é referencial e não foi conferido na SEFAZ/${uf}.`
+                avisoIndiceNaoConferido(uf, unidade.name, unidade.value, unidade.vigenciaInicio)
             );
         }
         // A unidade fiscal tem de ser a vigente na data do fato gerador; quando a série não
@@ -119,7 +122,7 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         if (unidade.outdated) {
             warningMessage = appendWarning(
                 warningMessage,
-                `Valor de ${unidade.name} usado (R$ ${unidade.value.toFixed(2)}${unidade.vigenciaInicio ? `, vigência ${unidade.vigenciaInicio}` : ''}) não cobre a data do fato gerador. Confirme o índice da competência.`
+                avisoIndiceForaDaVigencia(unidade.name, unidade.value, unidade.vigenciaInicio)
             );
         }
     }
