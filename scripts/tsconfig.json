@@ -1,0 +1,14 @@
+{
+  "//": "Os geradores rodam com vite-node e não entram no dist/. Este tsconfig existe só para que `npm run typecheck:golden` verifique os scripts e o que eles importam de src/.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "rootDir": ".."
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.d.ts"
+  ],
+  "exclude": []
+}

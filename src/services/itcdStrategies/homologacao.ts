@@ -12,8 +12,15 @@ import { ItcdTaxType } from './types';
 // obrigatório — nunca como valor oficial.
 //
 // Para homologar uma UF quando o parecer tributário chegar: preencha `normaCitadaNoCodigo`
-// com a norma + artigo + início de vigência efetivamente conferidos e `conferidaPor`/
-// `conferidaEm` com quem conferiu e quando. Não invente nem alíquota nem citação.
+// com a norma + artigo + início de vigência efetivamente conferidos e monte a conferência
+// SEMPRE por `criarConferencia`, que recusa assinatura sem conteúdo. Não invente nem alíquota
+// nem citação.
+//
+// SELO SEM CONTEÚDO NÃO É SELO — decisão registrada: `isHomologada` testava a EXISTÊNCIA do
+// objeto de conferência, então gravar `causaMortis: {}` (sem quem conferiu, sem quando, sem
+// norma) fazia a UF sair como HOMOLOGADA e apagava o aviso de valor referencial do relatório
+// entregue ao cliente. Agora a homologação exige conteúdo válido, e o que não é válido conta
+// como PENDENTE (não como erro): o motor segue calculando, sempre com a ressalva.
 //
 // MODO ESTRITO — decisão registrada: existiu um `calculateItcdForStateStrict` (e o erro
 // `ItcdUfNaoConfiguradaError`) que recusava calcular UF não homologada. Foi REMOVIDO por não
@@ -23,15 +30,90 @@ import { ItcdTaxType } from './types';
 // invólucro de `calculateItcdForState` (lança quando `confiabilidade !== 'HOMOLOGADA'`), para
 // os caminhos que não podem publicar número referencial — emissão de guia, por exemplo.
 
+// Marca de validação. O símbolo não é exportado, então um objeto literal escrito em outro
+// arquivo não satisfaz `ConferenciaHumana` para o compilador: quem quiser homologar tem de
+// passar por `criarConferencia`. Nenhum campo aqui é opcional — campo opcional esquecido é
+// exatamente como o selo vazio silenciava o alerta.
+declare const seloDeConferencia: unique symbol;
+
 /** Assinatura humana da conferência. Sem ela nenhuma UF é homologada. */
 export interface ConferenciaHumana {
     /** Quem conferiu a tabela contra a norma (nome/OAB ou setor responsável). */
     conferidaPor: string;
-    /** Data da conferência, em AAAA-MM-DD. */
+    /** Data da conferência, em AAAA-MM-DD. Nunca futura. */
     conferidaEm: string;
-    /** Norma, artigo e início de vigência conferidos. */
+    /** Norma, artigo e início de vigência conferidos. Precisa citar norma E artigo. */
+    referencia: string;
+    /** Só `criarConferencia` produz esta marca; não escreva o campo à mão. */
+    readonly [seloDeConferencia]: true;
+}
+
+/** Dados brutos de uma conferência, antes de validados. */
+export interface ConferenciaEmBranco {
+    conferidaPor: string;
+    conferidaEm: string;
     referencia: string;
 }
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+// A referência precisa citar norma E artigo: "Lei nº 10.705/2000" sozinha não diz o que foi
+// conferido, e "art. 16" sozinho não diz de qual norma.
+const CITA_NORMA = /(lei|decreto|complementar|constitui|resolu|portaria|regulamento|c[óo]digo)/i;
+const CITA_ARTIGO = /\bart(?:s?\.|igos?\b)/i;
+
+const preenchido = (valor: unknown): valor is string =>
+    typeof valor === 'string' && valor.trim().length > 0;
+
+/** Data existente no calendário e em AAAA-MM-DD — 2025-02-30 é recusada. */
+const dataDeCalendario = (valor: string): boolean => {
+    if (!DATA_ISO.test(valor)) return false;
+    const data = new Date(`${valor}T00:00:00Z`);
+    return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === valor;
+};
+
+// Comparação em UTC: o horário de Brasília está sempre atrás do UTC, então a data de hoje em
+// UTC nunca é menor que a local e uma conferência assinada hoje jamais é lida como futura.
+const hojeUtc = (): string => new Date().toISOString().slice(0, 10);
+
+/**
+ * A conferência tem conteúdo que sirva de prova? Objeto vazio, responsável em branco, data
+ * inválida/futura ou referência sem norma e artigo NÃO são conferência: a UF segue pendente.
+ */
+export const conferenciaValida = (conferencia: unknown): conferencia is ConferenciaHumana => {
+    if (!conferencia || typeof conferencia !== 'object') return false;
+
+    const { conferidaPor, conferidaEm, referencia } = conferencia as Partial<ConferenciaEmBranco>;
+
+    if (!preenchido(conferidaPor)) return false;
+    // Data futura é erro de digitação ou selo forjado: ninguém conferiu amanhã.
+    if (!preenchido(conferidaEm) || !dataDeCalendario(conferidaEm.trim())) return false;
+    if (conferidaEm.trim() > hojeUtc()) return false;
+
+    return preenchido(referencia) && CITA_NORMA.test(referencia) && CITA_ARTIGO.test(referencia);
+};
+
+/**
+ * Única porta de entrada de uma conferência assinada: recusa na hora o que não serve de prova,
+ * em vez de deixar o registro nascer inválido e só aparecer lá na frente como "HOMOLOGADA".
+ */
+export const criarConferencia = (dados: ConferenciaEmBranco): ConferenciaHumana => {
+    const conferencia = {
+        conferidaPor: dados?.conferidaPor?.trim(),
+        conferidaEm: dados?.conferidaEm?.trim(),
+        referencia: dados?.referencia?.trim(),
+    };
+
+    if (!conferenciaValida(conferencia)) {
+        throw new Error(
+            'Conferência de ITCD inválida ' +
+            `(conferidaPor="${dados?.conferidaPor}", conferidaEm="${dados?.conferidaEm}", referencia="${dados?.referencia}"): ` +
+            'exige responsável identificado, data AAAA-MM-DD não futura e referência citando norma e artigo.'
+        );
+    }
+
+    return conferencia;
+};
 
 export interface UfHomologacao {
     /**
@@ -39,9 +121,9 @@ export interface UfHomologacao {
      * foi copiada do `legalText` da estratégia e não vale como conferência.
      */
     normaCitadaNoCodigo?: string;
-    /** Conferência da tabela de causa mortis. `undefined` = pendente. */
+    /** Conferência da tabela de causa mortis, via `criarConferencia`. `undefined` = pendente. */
     causaMortis?: ConferenciaHumana;
-    /** Conferência da tabela de doação (inter vivos). `undefined` = pendente. */
+    /** Conferência da tabela de doação (inter vivos), via `criarConferencia`. `undefined` = pendente. */
     doacao?: ConferenciaHumana;
     /** O que falta conferir. Obrigatório enquanto a conferência não existir. */
     pendencia?: string;
@@ -87,17 +169,20 @@ export const ITCD_HOMOLOGACAO: Record<UF, UfHomologacao> = {
 
 export const getHomologacao = (uf: string): UfHomologacao | undefined => ITCD_HOMOLOGACAO[uf as UF];
 
-/** Conferência assinada para o tipo de fato gerador pedido, quando existir. */
+/** Conferência assinada para o tipo de fato gerador pedido, quando existir E for válida. */
 export const getConferencia = (uf: string, taxType: ItcdTaxType): ConferenciaHumana | undefined => {
     const registro = getHomologacao(uf);
     if (!registro) return undefined;
-    return taxType === 'DOACAO' ? registro.doacao : registro.causaMortis;
+    const conferencia = taxType === 'DOACAO' ? registro.doacao : registro.causaMortis;
+    // O selo é lido pelo conteúdo, não pela presença: quem gravar um objeto sem assinatura
+    // (à mão, por cast ou por payload persistido antigo) tem uma UF pendente, não homologada.
+    return conferenciaValida(conferencia) ? conferencia : undefined;
 };
 
 /**
  * A UF está homologada para o tipo de fato gerador pedido?
- * Só quando a conferência humana está assinada — norma citada no código não homologa nada.
- * UF fora do registro nunca está.
+ * Só quando a conferência humana está assinada e completa — norma citada no código não homologa
+ * nada, e selo sem conteúdo vale o mesmo que selo nenhum. UF fora do registro nunca está.
  */
 export const isHomologada = (uf: string, taxType: ItcdTaxType): boolean =>
     !!getConferencia(uf, taxType);
@@ -110,10 +195,12 @@ export const listUfsNaoConfiguradas = (taxType: ItcdTaxType): UF[] =>
 export const getPendencia = (uf: string, taxType: ItcdTaxType): string | undefined => {
     const registro = getHomologacao(uf);
     if (!registro) return undefined;
-    if (taxType === 'DOACAO' && !registro.doacao) {
-        // Sem conferência da causa mortis a pendência maior é a da tabela; com ela, o que
-        // falta é especificamente a tabela de doação.
-        return registro.causaMortis ? PENDENCIA_DOACAO : registro.pendencia;
+    if (isHomologada(uf, taxType)) return undefined;
+    if (taxType === 'DOACAO' && isHomologada(uf, 'CAUSA_MORTIS')) {
+        // Com a causa mortis conferida, o que falta é especificamente a tabela de doação.
+        return PENDENCIA_DOACAO;
     }
-    return registro.pendencia;
+    // Fallback obrigatório: quem grava um selo inválido tende a apagar a `pendencia` junto,
+    // e UF sem homologação não pode sair sem dizer o que falta conferir.
+    return registro.pendencia ?? PENDENCIA_TABELA;
 };

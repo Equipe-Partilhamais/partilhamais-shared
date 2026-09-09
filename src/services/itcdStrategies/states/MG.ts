@@ -1,8 +1,33 @@
 import { ItcdStrategy, ItcdStrategyParams, ItcdResult } from '../types';
 import { fiscalUnitsApi } from '../../fiscalUnitsApi';
 import { buildConversionStep } from '../utils';
-import { avisoDescontoSemDataDoObito, avisoPrazoDescontoExpirado } from '../warnings';
+import { avisoDescontoSemDataDoObito } from '../warnings';
+import { formatCurrency } from '../../../utils/formatters';
 import { ItcdCalculationMemory } from '../../../types';
+
+const PRAZO_DESCONTO_DIAS = 90;
+const ALIQUOTA_DESCONTO = 0.15;
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+// Datas do caso são lidas em UTC puro e nunca comparadas com o relógio: o mesmo inventário
+// tem de dar o mesmo imposto no navegador (BRT) e no servidor (UTC). Com `new Date(y, m-1, d)`
+// mais `new Date()` o desconto de 15% mudava conforme o fuso e a hora da consulta.
+const parseDataDoCaso = (isoDate: string): Date | null => {
+    const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
+    if (!partes) return null;
+
+    const [, ano, mes, dia] = partes;
+    const data = new Date(Date.UTC(Number(ano), Number(mes) - 1, Number(dia)));
+    // O construtor normaliza data inexistente (31/02 vira 03/03) em silêncio.
+    return data.getUTCMonth() === Number(mes) - 1 && data.getUTCDate() === Number(dia) ? data : null;
+};
+
+const somaDias = (data: Date, dias: number): Date => new Date(data.getTime() + dias * MS_POR_DIA);
+
+// Formatação própria em vez de toLocaleDateString('pt-BR'): o Node pode rodar sem o locale
+// pt-BR e imprimir a data no formato americano no documento entregue ao cliente.
+const formataDataBR = (data: Date): string =>
+    `${String(data.getUTCDate()).padStart(2, '0')}/${String(data.getUTCMonth() + 1).padStart(2, '0')}/${data.getUTCFullYear()}`;
 
 export const MGStrategy: ItcdStrategy = {
     calculate({ baseValue, deathDate, settings, taxType }: ItcdStrategyParams): ItcdResult {
@@ -78,34 +103,35 @@ export const MGStrategy: ItcdStrategy = {
         }
 
         // --- REGRA CAUSA MORTIS (MG): 5% Fixo ---
-        let tax = safeBaseValue * 0.05; 
+        const tax = safeBaseValue * 0.05;
         const originalTax = tax;
-        let discountApplied = '';
+        // Sem data de recolhimento não há desconto aplicado: os dois campos ficam zerados de
+        // propósito, para que a tela não exiba um abatimento que não entrou no imposto devido.
+        const discountApplied = '';
+        const discountValue = 0;
         let warningMessage = '';
-        let discountValue = 0;
 
-        // Regra de Desconto de MG (Causa Mortis): 15% se pago em até 90 dias
-        if (deathDate && settings?.applyInventoryDiscount) {
-            const [y, m, d] = deathDate.split('-').map(Number);
-            const death = new Date(y, m - 1, d);
-            const today = new Date();
-            
-            // Calculate difference in days
-            const diffTime = Math.abs(today.getTime() - death.getTime());
-            const daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            
-            if (daysDiff <= 90) {
-                discountValue = tax * 0.15;
-                tax = tax - discountValue; 
-                discountApplied = 'Desconto de 15% (Pagamento em até 90 dias do óbito)';
+        // Regra de Desconto de MG (Causa Mortis): 15% se pago em até 90 dias do óbito.
+        // O desconto depende da data de RECOLHIMENTO, que o inventário não guarda. O motor
+        // devolve então o imposto cheio e informa o benefício como projeção — aplicá-lo por
+        // conta própria significaria supor um pagamento que ninguém declarou.
+        if (settings?.applyInventoryDiscount) {
+            const death = deathDate ? parseDataDoCaso(deathDate) : null;
+
+            if (!death) {
+                warningMessage = avisoDescontoSemDataDoObito();
             } else {
-                // Add 90 days to death date
-                const limitDate = new Date(death);
-                limitDate.setDate(limitDate.getDate() + 90);
-                warningMessage = avisoPrazoDescontoExpirado(90, limitDate.toLocaleDateString('pt-BR'));
+                const dataLimite = somaDias(death, PRAZO_DESCONTO_DIAS);
+                const descontoPotencial = tax * ALIQUOTA_DESCONTO;
+                // A frase abre com "Desconto não calculado" porque é o marcador que classifica
+                // a ressalva como PRAZO em warnings.ts.
+                warningMessage =
+                    `Desconto não calculado: os ${ALIQUOTA_DESCONTO * 100}% por pagamento em até ` +
+                    `${PRAZO_DESCONTO_DIAS} dias do óbito dependem da data de recolhimento, que não consta do caso. ` +
+                    `Se o pagamento ocorrer até ${formataDataBR(dataLimite)}, o imposto cai de ` +
+                    `${formatCurrency(tax)} para ${formatCurrency(tax - descontoPotencial)} ` +
+                    `(economia de ${formatCurrency(descontoPotencial)}).`;
             }
-        } else if (settings?.applyInventoryDiscount) {
-            warningMessage = avisoDescontoSemDataDoObito();
         }
 
         return {
