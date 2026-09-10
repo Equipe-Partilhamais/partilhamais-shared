@@ -26,7 +26,7 @@ de tributo — **correção de cálculo e segurança são críticos**.
 
 - **1 VM Ampere A1** (Ubuntu 24.04 ARM, 4 OCPU/24GB) roda tudo em Docker.
 - **Postgres** self-hosted (interno) · **Redis** self-hosted (cache + rate-limit) ·
-  **MinIO/R2** para arquivos (substitui Cloudinary) · **Caddy** (proxy + TLS).
+  **Caddy** (proxy + TLS). **Storage de arquivos: ver o aviso abaixo.**
 - **GlitchTip** (compatível com Sentry) em `logs.partilhamais.com.br` — erros/logs.
 - **Cloudflare** — DNS + TLS + Access (protege o `dev`).
 
@@ -45,7 +45,14 @@ de tributo — **correção de cálculo e segurança são críticos**.
 3. **Cálculo**: `@partilhamais/shared` calcula partilha, ITCD por estado e
    honorários — **mesmo resultado** no backend (petições/escrituras) e no frontend.
 4. **OCR**: documentos são enviados ao serviço Python (PaddleOCR) que extrai dados.
-5. **Storage**: arquivos vão para object storage S3-compatível (MinIO/R2).
+5. **Storage**: **NAO existe object storage.** A decisao por MinIO/R2 foi tomada e
+   nunca implementada -- nao ha `@aws-sdk/client-s3` nem `minio` no `package.json`,
+   nenhum `S3Client` no codigo e nenhum servico de storage no
+   `deploy/docker-compose.prod.yml`. O unico caminho e o **Cloudinary**
+   (`src/lib/cloudinary.ts`), e as tres variaveis dele **nao estao configuradas em
+   producao**. Sem elas, `src/app/api/upload/document/route.ts` devolve o arquivo
+   como **data URI base64** e ele e gravado dentro do JSON do inventario, no
+   Postgres. Ou seja: o fallback nao e o Cloudinary, e o base64.
 6. **Billing**: Stripe (allowlist de preços; webhook idempotente).
 
 ## 5. 🔄 Rota de trabalho de desenvolvimento
