@@ -1,4 +1,6 @@
 import { ItcdReliability, ItcdWarningCategory } from './types';
+import { formatCurrency } from '../../utils/formatters';
+import { PerfilItcdUf } from './perfilUf';
 
 /**
  * Composição e classificação das ressalvas do ITCD.
@@ -23,14 +25,26 @@ const M_PRAZO_SEM_DATA = 'Desconto não calculado';
 // cairia em OUTRO e voltaria a ser exibido sob o rótulo de tabela não conferida.
 const M_COMPETENCIA_SUCESSOR = 'para determinar a competência';
 const M_COMPETENCIA_ESTIMADA = 'competência estimada';
+// Compostos pelo motor de partilha (`services/partilha`), ao montar a base de cada UF.
+const M_SEM_BENEFICIARIOS = 'sem beneficiário para ratear a base';
+const M_DIVIDAS_NAO_ABATIDAS = 'as dívidas não são abatidas da base do ITCD';
+const M_ABATIMENTO_CONTROVERTIDO = 'abatimento de dívidas na base do ITCD não tem regra registrada';
+// Vigência da tabela codificada (revisão): fato gerador anterior ao início registrado, ou sem data.
+const M_TABELA_FORA_DA_VIGENCIA = 'anterior ao início de vigência da tabela codificada';
+const M_VIGENCIA_SEM_DATA = 'sem a data do fato gerador não há como conferir a vigência da tabela';
 
 const MARCADORES: ReadonlyArray<{ categoria: ItcdWarningCategory; marcador: string }> = [
     { categoria: 'TABELA_NAO_HOMOLOGADA', marcador: M_TABELA },
     { categoria: 'TABELA_NAO_HOMOLOGADA', marcador: M_ALIQUOTA_DOACAO },
+    { categoria: 'TABELA_NAO_HOMOLOGADA', marcador: M_TABELA_FORA_DA_VIGENCIA },
+    { categoria: 'TABELA_NAO_HOMOLOGADA', marcador: M_VIGENCIA_SEM_DATA },
     { categoria: 'INDICE_FISCAL', marcador: M_INDICE_NAO_CONFERIDO },
     { categoria: 'INDICE_FISCAL', marcador: M_INDICE_FORA_DA_VIGENCIA },
     { categoria: 'COMPETENCIA', marcador: M_COMPETENCIA_SUCESSOR },
     { categoria: 'COMPETENCIA', marcador: M_COMPETENCIA_ESTIMADA },
+    { categoria: 'BASE_CALCULO', marcador: M_SEM_BENEFICIARIOS },
+    { categoria: 'BASE_CALCULO', marcador: M_DIVIDAS_NAO_ABATIDAS },
+    { categoria: 'BASE_CALCULO', marcador: M_ABATIMENTO_CONTROVERTIDO },
     { categoria: 'PRAZO', marcador: M_PRAZO_EXPIRADO },
     { categoria: 'PRAZO', marcador: M_PRAZO_SEM_DATA },
 ];
@@ -40,9 +54,63 @@ export const ITCD_WARNING_LABELS: Record<ItcdWarningCategory, string> = {
     TABELA_NAO_HOMOLOGADA: 'a tabela de ITCD não foi conferida contra a lei estadual vigente',
     INDICE_FISCAL: 'a unidade fiscal usada não foi conferida ou não cobre a data do fato gerador',
     COMPETENCIA: 'a competência do imposto depende de dado que ainda não foi informado',
+    BASE_CALCULO: 'a base de cálculo depende de regra não registrada ou de dado que falta no caso',
     PRAZO: 'há prazo de desconto vencido ou não apurado',
     OUTRO: 'há ressalva registrada pelo motor de cálculo',
 };
+
+const reais = (valor: number): string => formatCurrency(valor);
+
+/** AAAA-MM-DD → DD/MM/AAAA, sem depender do locale do Node. */
+const dataBR = (iso: string): string => {
+    const [a, m, d] = iso.slice(0, 10).split('-');
+    return `${d}/${m}/${a}`;
+};
+
+export const avisoTabelaForaDaVigencia = (uf: string, vigenciaDesde: string, dataFatoGerador: string, fonte?: string): string =>
+    `ITCD de ${uf} INDETERMINADO: o fato gerador (${dataBR(dataFatoGerador)}) é ${M_TABELA_FORA_DA_VIGENCIA} ` +
+    `(${dataBR(vigenciaDesde)}${fonte ? ` — ${fonte}` : ''}). A tabela aplicável nessa data não está no PartilhaMais: o valor ` +
+    `exibido é o da tabela atual, só como referência, e não vale para este fato gerador.`;
+
+export const avisoVigenciaSemData = (uf: string, vigenciaDesde: string, fonte?: string): string =>
+    `A tabela de ITCD de ${uf} codificada vale desde ${dataBR(vigenciaDesde)}${fonte ? ` (${fonte})` : ''}; ` +
+    `${M_VIGENCIA_SEM_DATA}. Informe a data do óbito.`;
+
+/**
+ * CALC-03: falta o dado que define o Estado competente. A frase carrega os DOIS marcadores de
+ * competência ("competência estimada" e "para determinar a competência"), para cair em
+ * COMPETENCIA mesmo que alguém reescreva uma das metades.
+ */
+export const avisoCompetenciaIndeterminada = (dadoFaltante: string, ufProcesso: string, fundamento: string): string =>
+    `Competência indeterminada: ${dadoFaltante} não foi informado, e é ele que define o Estado competente (${fundamento}). ` +
+    `O valor desta UF está com ${M_COMPETENCIA_ESTIMADA} pela UF do processo (${ufProcesso}) apenas como referência; ` +
+    `informe o dado ${M_COMPETENCIA_SUCESSOR} antes de recolher o imposto ou gerar a minuta.`;
+/**
+ * Revisão 2: de cujus no exterior, parte de um sucessor cuja UF de domicílio não se sabe. Leva os
+ * dois marcadores de competência, como `avisoCompetenciaIndeterminada`.
+ */
+export const avisoSucessorSemUf = (nome: string, motivo: 'SEM_UF' | 'NO_EXTERIOR'): string =>
+    motivo === 'NO_EXTERIOR'
+        ? `Sucessor ${nome} domiciliado no exterior: com o de cujus também no exterior, a competência sobre a parte dele segue ` +
+          `a localização do bem no Brasil (LC 227/2026, art. 159, V), que o cadastro não informa — ${M_COMPETENCIA_ESTIMADA} ` +
+          `apenas como referência; informe a localização do bem ${M_COMPETENCIA_SUCESSOR}.`
+        : `Sucessor ${nome} sem UF de domicílio informada: a competência sobre a parte dele nos bens que seguem o domicílio do ` +
+          `sucessor (LC 227/2026, arts. 158, III, e 159, II) não pode ser determinada — ${M_COMPETENCIA_ESTIMADA} apenas como ` +
+          `referência; informe a UF de residência na qualificação ${M_COMPETENCIA_SUCESSOR}.`;
+
+export const avisoItcdSemBeneficiarios = (uf: string, base: number): string =>
+    `ITCD de ${uf} não calculado: ${M_SEM_BENEFICIARIOS} de ${reais(base)} — nenhum herdeiro ou legatário recebe quinhão ` +
+    `neste cálculo (CTN, art. 35, parágrafo único). Cadastre os herdeiros antes de usar o valor.`;
+
+export const avisoDividasNaoAbatidas = (uf: string, fundamento: string): string =>
+    `Em ${uf} ${M_DIVIDAS_NAO_ABATIDAS}, qualquer que seja o tratamento escolhido para a dívida (${fundamento}). ` +
+    `Há decisões judiciais admitindo o abatimento de dívida comprovada; adotar essa tese é decisão do advogado e, ` +
+    `em regra, depende de medida judicial.`;
+
+export const avisoAbatimentoControvertido = (uf: string, impostoBaseBruta: number, impostoComTodasAbatidas: number): string =>
+    `Em ${uf} o ${M_ABATIMENTO_CONTROVERTIDO} no PartilhaMais: o cálculo seguiu o tratamento escolhido para cada dívida. ` +
+    `Sem abater nenhuma dívida o ITCD seria ${reais(impostoBaseBruta)}; abatendo todas, ${reais(impostoComTodasAbatidas)}. ` +
+    `Confirme a regra da SEFAZ/${uf} antes de usar.`;
 
 const descreveIndice = (valor: number, vigenciaInicio?: string): string =>
     `R$ ${valor.toFixed(2)}${vigenciaInicio ? `, vigência ${vigenciaInicio}` : ''}`;
@@ -50,8 +118,58 @@ const descreveIndice = (valor: number, vigenciaInicio?: string): string =>
 export const avisoTabelaNaoHomologada = (uf: string): string =>
     `Valor referencial: a tabela de ITCD de ${uf} ${M_TABELA}. Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`;
 
+/**
+ * CALC-06: a ressalva de tabela não homologada era a MESMA para as 27 UFs — a do RS (pesquisada
+ * em fonte primária) e a do SE (sabidamente errada) eram indistinguíveis. Agora o texto diz em
+ * que situação a tabela está. Todas as variantes carregam o marcador M_TABELA, então a
+ * categoria continua TABELA_NAO_HOMOLOGADA para quem agrupa por categoria.
+ */
+export const avisoTabelaPorSituacao = (uf: string, perfil: Pick<PerfilItcdUf, 'situacaoTabela' | 'resumoDivergencia'>): string => {
+    switch (perfil.situacaoTabela) {
+        case 'DIVERGENCIA_CONHECIDA':
+            return (
+                `DIVERGÊNCIA CONHECIDA: a tabela de ITCD de ${uf} ${M_TABELA} e o valor calculado NÃO corresponde à lei estadual` +
+                `${perfil.resumoDivergencia ? ` — ${perfil.resumoDivergencia}` : '.'} Refaça o cálculo pela lei (SEFAZ/${uf}) antes de recolher ` +
+                `o imposto ou de usar o valor na minuta.`
+            );
+        case 'PESQUISADA':
+            return (
+                `Valor referencial: a tabela de ITCD de ${uf} ${M_TABELA}. As faixas foram pesquisadas na lei estadual, mas a ` +
+                `conferência ainda não foi assinada por um responsável. Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`
+            );
+        case 'FAIXAS_ESTIMADAS':
+            return (
+                `Faixas sem fonte legal registrada: a tabela de ITCD de ${uf} ${M_TABELA} e as faixas usadas foram estimadas. ` +
+                `Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`
+            );
+        default:
+            return (
+                `Valor referencial: a tabela de ITCD de ${uf} ${M_TABELA}; a alíquota usada é de referência, sem pesquisa da lei ` +
+                `estadual registrada. Confirme a alíquota vigente na SEFAZ/${uf} antes de usar.`
+            );
+    }
+};
+
+/** CALC-06: o que falta para homologar, conforme a situação da tabela. */
+export const pendenciaPorSituacao = (perfil: Pick<PerfilItcdUf, 'situacaoTabela' | 'resumoDivergencia' | 'fonteSituacao'>): string => {
+    switch (perfil.situacaoTabela) {
+        case 'DIVERGENCIA_CONHECIDA':
+            return `A tabela do código diverge da lei estadual (${perfil.fonteSituacao}). Corrigir a estratégia pela lei antes de qualquer conferência.`;
+        case 'PESQUISADA':
+            return `Tabela pesquisada em fonte primária (${perfil.fonteSituacao}); falta a conferência assinada por um responsável identificado.`;
+        case 'FAIXAS_ESTIMADAS':
+            return `Faixas sem fonte legal (${perfil.fonteSituacao}). Pesquisar a lei estadual e codificar as faixas antes da conferência.`;
+        default:
+            return `Alíquota de referência sem pesquisa registrada (${perfil.fonteSituacao}). Conferir contra a lei estadual vigente por um responsável identificado.`;
+    }
+};
+
 export const avisoAliquotaDoacaoNaoHomologada = (uf: string): string =>
     `${M_ALIQUOTA_DOACAO} para ${uf}: valor calculado com a regra de causa mortis.`;
+
+/** CALC-10: UF cuja lei registrada aplica à doação a mesma tabela da causa mortis (GO, art. 78). */
+export const avisoDoacaoMesmaTabelaPorLei = (uf: string): string =>
+    `${M_ALIQUOTA_DOACAO} para ${uf}: a lei registrada no PartilhaMais aplica à doação a mesma tabela da causa mortis.`;
 
 export const avisoIndiceNaoConferido = (
     uf: string,
@@ -98,6 +216,7 @@ const ORDEM_CATEGORIAS: ReadonlyArray<ItcdWarningCategory> = [
     'TABELA_NAO_HOMOLOGADA',
     'INDICE_FISCAL',
     'COMPETENCIA',
+    'BASE_CALCULO',
     'PRAZO',
     'OUTRO',
 ];

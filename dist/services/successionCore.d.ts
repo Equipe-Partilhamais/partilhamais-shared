@@ -57,6 +57,6 @@ export declare const inofficiousReductionFactors: (dispositions: {
 export declare const ITCD_COMPETENCE_CHANGE_DATE = "2023-12-20";
 export declare const isPreCompetenceChangeDeath: (deathDate?: string) => boolean;
 export declare const getCommonEstateFactor: (regime: SuccessionMaritalRegime, hasSpouse: boolean) => number;
-export declare const getPrivateEstateFactor: (regime: SuccessionMaritalRegime, hasSpouse: boolean) => number;
+export declare const getPrivateEstateFactor: (_regime: SuccessionMaritalRegime, _hasSpouse: boolean) => number;
 /** Rateia o passivo do espólio entre as UFs proporcionalmente ao acervo de cada uma. */
 export declare const allocateDebtByState: <K>(valuesByState: Map<K, number>, totalDebt: number) => Map<K, number>;

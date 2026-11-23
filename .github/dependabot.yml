@@ -1,0 +1,39 @@
+# Dependabot (auditoria INFRA-04): atualizações semanais das dependências npm
+# (só de desenvolvimento: typescript e vitest) e das actions do GitHub.
+#
+# Os PRs de versão vão para a `develop`. Os alertas de SEGURANÇA sempre abrem contra
+# a branch padrão (main) — isso é do GitHub. Este repositório é público: alertas e
+# security updates são gratuitos aqui; ligue em Settings -> Code security.
+#
+# Ao aceitar um PR de typescript, rode `npm run build` e commite o dist/: o CI
+# reprova dist desatualizado, e os apps importam o dist direto do git.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      minor-e-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    commit-message:
+      prefix: "chore(actions)"
+    groups:
+      actions:
+        patterns: ["*"]

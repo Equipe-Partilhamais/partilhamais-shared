@@ -16,7 +16,7 @@ export const AMStrategy: ItcdStrategy = {
         return {
             taxAmount: totalTax,
             effectiveRate: safeBaseValue > 0 ? totalTax / safeBaseValue : 0,
-            legalText: 'ITCD/AM — progressivo por enquadramento (2%, 3%, 4%). Faixas não homologadas nesta versão.',
+            legalText: 'ITCD/AM — progressivo por enquadramento (2%, 3%, 4%), sem norma estadual citada. Faixas não homologadas nesta versão.',
             originalTaxAmount: totalTax,
             discountValue: 0,
             calculationMemory: memory

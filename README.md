@@ -13,6 +13,86 @@ Instalar como git dependency:
 
     import { calculateItcdForState, calculateNotaryFees } from "@partilhamais/shared";
 
+## Motor de partilha (`calculatePartition`)
+
+A partilha mora aqui (`src/services/partilha/`), e nao mais em copias do frontend e do
+backend. Os dois apps passam o que ja tem — o `InventoryState` da store e o
+`InventoryStateForCalculation` da rota — porque a entrada (`PartitionInput`) e estrutural:
+unioes de string em vez de enums e `null` aceito em todo campo opcional. As tabelas de
+emolumentos sao ENTRADA (`feeTables`/`feeMetadata`); sem elas `notaryFeeStatus` diz
+`TABLES_UNAVAILABLE` e sai o aviso `EMOLUMENTOS_NAO_CALCULADOS`.
+
+    import { calculatePartition, PARTITION_ENGINE_VERSION } from "@partilhamais/shared";
+
+O resultado e um superconjunto do `CalculationResult` antigo, mais:
+
+- `itcdBreakdown[].beneficiarios` e `itcdPorBeneficiario`: o ITCD causa mortis e apurado
+  QUINHAO a quinhao (CTN, art. 35, paragrafo unico), uma guia por herdeiro/legatario,
+  arredondada a centavo; o total da UF e a soma das guias.
+- `itcdBreakdown[]`: `baseDeCalculo`, `abateDividas`, `situacaoTabela` e
+  `competenciaIndeterminada`, cada um com a fonte.
+- `avisos`: toda incerteza do calculo, estruturada (`codigo`, `categoria`, `gravidade`,
+  `mensagem`, `fundamento`, `ufs`, `pessoas`, `bens`, `valores`). A tela e o DOCX exibem todos.
+- `minuta.exigeConfirmacao` / `minuta.motivos`: os avisos de gravidade `EXIGE_CONFIRMACAO`
+  (tabela com divergencia conhecida, competencia indeterminada, disposicao inoficiosa).
+- `monteLiquido`, `passivoDoEspolioNaHeranca` (legitima sobre o monte liquido, CC art. 1.847)
+  e `targets[].fracaoDoMonte` (razao "1/7" quando existe).
+- `targets[].passivoDoEspolio` / `liquidoProjetado`: parte do passivo do espolio que cada um
+  suporta (herdeiros legitimos e de quota na proporcao do quinhao, CC art. 1.997; legatario
+  de bem certo nada; meeiro, metade da divida comum). Legado de bem certo vai para o ITCD da
+  UF do proprio bem.
+- `atribuicoes[]`: cada atribuicao de bem `{ assetId, personId, percentage, fracao, valorBruto,
+  valorLiquido, lockReason }`, como o motor usa (por pessoa, os `valorLiquido` somam o
+  `grossAllocatedValue`). A minuta deve ler daqui, nao refazer o rateio.
+- `donationBreakdown[].competenciaEstimada` / `motivoCompetenciaEstimada`.
+- Legado de bem comum vale so sobre a parte do falecido (CC art. 1.914; aviso
+  `LEGADO_LIMITADO_A_PARTE_DO_TESTADOR`) e sai da massa do proprio bem.
+- De cujus no exterior: o ITCD dos bens que seguem o domicilio do sucessor e apurado por
+  sucessor, na UF de `residenceState` de cada herdeiro (`resolveAssetItcdCompetence(...).porSucessor`);
+  herdeiro sem UF fica com a parte em competencia indeterminada (aviso e trava).
+- `itcdBreakdown[].calculoIndeterminado` / `itcdIndeterminado`: fato gerador anterior ao
+  inicio de vigencia registrado da tabela (`PERFIL_ITCD_UF[uf].vigenciaDesde`); o valor e so
+  referencia — exiba "indeterminado".
+- `engineVersion`: grave no snapshot de todo calculo persistido.
+
+### Mesma entrada, mesmo resultado (tela, minuta e servidor)
+
+- **Ordem nao importa.** O motor processa herdeiros, bens, atribuicoes, passivos e vinculos em
+  ordem canonica (por id); o centavo do rateio vai sempre para o mesmo `personId`. So
+  `targets` volta na ordem de entrada (conjuge primeiro), para a tela.
+- **Visao como entrada:** `PartitionInput.visao = { baseDeAvaliacao?: 'MARKET' | 'STATE',
+  filtroDeBens?: 'TODOS' | 'PARTILHA_OFICIAL' }`. Padrao: `settings.assetValuationBasis` (ou
+  `MARKET`) e `TODOS`. O resultado declara a usada em `visao = { baseDeAvaliacao, filtroDeBens,
+  bensForaDaPartilha }`. O motor nao decide qual visao vale para a minuta.
+  `isAssetIncludedInOfficialPartition(asset)` e a regra do filtro (`includeInOfficial` no topo do
+  bem; senao `otherDetails.includeInOfficial !== false`).
+- **Conjuge:** `montarConjugeDaEntrada(deceased, heirs)` monta o conjuge a partir de
+  `deceased.spouseQualification` (renuncia, UF etc.) e de qualquer cadastro de conjuge; o
+  `calculatePartition` ja a aplica, entao chamar antes ou nao da o mesmo resultado.
+- **`montes`** (definicoes em `tipos.ts`): `bensBrutos`, `passivoVinculado`,
+  `passivoAssumidoPorHerdeiros`, `herancaFisica` (= `herancaTotal`), `meacao`,
+  `montePartilhavel` (= `taxBase`), `colacao`, `monteComColacao` (= `successionBase`),
+  `passivoDoEspolio`, `passivoDoEspolioNaHeranca`, `monteLiquido`.
+- **`testamento`**: `disponivel`, `dispostoLiquido` (= `testamentaryTotal`, ja com art. 1.914 e
+  divida), `atribuidoBruto`, `fatorQuota`, `fatorLegado` e `disposicoes[]` com
+  `fatorDeReducao`, `percentualAposReducao`, `valorAposReducao` e, por item de legado,
+  `valorLegado` / `valorValido` / `valorAposReducao` / `percentualAposReducao`. O app grava
+  esses numeros; nao recalcula a reducao do art. 1.967, § 1º.
+- **Hash:** `hashDoResultado(resultado)` = `sha256Hex(serializarResultadoCanonico(resultado))`.
+  Chaves ordenadas em todos os niveis, `undefined` omitido, `-0` vira `0`, nao finito vira
+  `null`, `targets` ordenado por `personId`. O sha256 e TypeScript puro e sincrono (sem `crypto`
+  do Node nem `SubtleCrypto`), e roda igual em Node e no navegador. E o `resultadoHash` do
+  snapshot.
+
+O perfil juridico de cada UF (`PERFIL_ITCD_UF`, em `itcdStrategies/perfilUf.ts`) registra
+base de calculo, abatimento de dividas, situacao da tabela e tabela de doacao, sempre com a
+fonte no proprio repositorio. Nao e homologacao: essa continua sendo a assinatura humana de
+`homologacao.ts`.
+
+`src/__tests__/caracterizacao.motorUnico.test.ts` roda cada cenario nos dois motores antigos
+(copia congelada em `src/__tests__/caracterizacao/legado/`) e no motor unificado; toda
+diferenca de numero tem de estar declarada no cenario, com o motivo.
+
 ## Desenvolvimento
 
     npm install
@@ -115,9 +195,9 @@ so nao pode passar despercebido:
 
 ### Limite conhecido do golden sucessorio
 
-`successionCore` e o nucleo COMUM aos dois apps e **nao contem** a regra do art. 1.832
-(quanto o conjuge leva concorrendo com descendentes, com o piso de 1/4) nem a colacao de
-adiantamentos — as duas continuam escritas dentro de `calculationService.ts` de cada app,
-em copias mantidas a mao. O golden daqui congela a distribuicao INTERNA da classe dos
-descendentes e o booleano `shouldSpouseCompeteWithDescendants`; o rateio entre conjuge e
-descendentes so passa a ser congelavel quando essas regras subirem para este pacote.
+`successionCore` nao contem a regra do art. 1.832 (quanto o conjuge leva concorrendo com
+descendentes, com o piso de 1/4) nem a colacao de adiantamentos: as duas agora moram no motor
+de partilha deste pacote (`services/partilha/motor.ts`), e nao mais em copias dos apps. O
+golden JSONL continua congelando so o nucleo; o rateio entre conjuge e descendentes, a colacao
+e o ITCD por quinhao ficam cobertos pela caracterizacao contra os motores antigos
+(`caracterizacao.motorUnico.test.ts`) e pelos testes `calc0*.test.ts` de cada achado.

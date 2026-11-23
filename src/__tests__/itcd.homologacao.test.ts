@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
     calculateItcdForState,
+    classifyItcdWarning,
     conferenciaValida,
     ConferenciaHumana,
     criarConferencia,
@@ -79,11 +80,15 @@ describe('conferência das tabelas de ITCD', () => {
 });
 
 describe('ITCD de doação (excesso de partilha)', () => {
-    it.each(TODAS_AS_UFS)('%s avisa que a doação foi calculada com a regra de causa mortis', (uf) => {
+    // CALC-10: este teste exigia "Alíquota de doação não homologada ... regra de causa mortis"
+    // nas 27 UFs e congelava uma frase falsa nas que têm tabela própria de doação (AL, BA, MG,
+    // PB, RS). O que vale para todas é a ressalva de tabela não conferida; a frase da causa
+    // mortis só onde ela é verdade (ver calc10.avisoDoacao.test.ts).
+    it.each(TODAS_AS_UFS)('%s sai com ressalva de tabela não homologada também na doação', (uf) => {
         const doacao = calculateItcdForState(uf, 1_000_000, SETTINGS, OBITO, 'DOACAO');
 
         expect(doacao.confiabilidade).toBe('NAO_CONFIGURADA');
-        expect(doacao.warningMessage).toContain('Alíquota de doação não homologada');
+        expect(classifyItcdWarning(doacao.warningMessage)).toContain('TABELA_NAO_HOMOLOGADA');
     });
 
     it('RS aplica a tabela de doação, distinta da de causa mortis', () => {

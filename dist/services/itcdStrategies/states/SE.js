@@ -24,7 +24,9 @@ exports.SEStrategy = {
         return {
             taxAmount: tax,
             effectiveRate: 0.08,
-            legalText: 'Legislação Estadual SE. Alíquota única de 8%.',
+            // CALC-06: o texto anterior ("Legislação Estadual SE. Alíquota única de 8%.") era falso —
+            // a lei não tem alíquota única. A alíquota NÃO mudou; ver o comentário acima.
+            legalText: 'ITCD/SE — 8% de referência sobre toda a base: é o teto da tabela progressiva da Lei/SE nº 7.724/2013, art. 14, I. Divergência conhecida: a lei tem faixas de 3%, 6% e 8% e regimes próprios para quotas de sociedade e para a doação (2% em bens móveis); o valor não corresponde ao imposto devido.',
             originalTaxAmount: tax,
             discountValue: 0
         };

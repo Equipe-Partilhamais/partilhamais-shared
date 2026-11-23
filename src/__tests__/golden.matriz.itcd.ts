@@ -175,6 +175,10 @@ export const vetorItcd = (c: CombinacaoItcd): VetorGolden => {
         // o texto de um aviso sem mudar o marcador reclassifica a ressalva em silêncio.
         categoriasAviso: classifyItcdWarning(resultado.warningMessage),
         pendenciaHomologacao: ouNulo(resultado.pendenciaHomologacao),
+        // CALC-06: em que situação a tabela está (pesquisada, divergente, estimada, referência).
+        situacaoTabela: ouNulo(resultado.situacaoTabela),
+        // Revisão: vigência registrada da tabela frente à data do fato gerador (ANTERIOR = indeterminado).
+        vigencia: ouNulo(resultado.vigencia),
 
         unidadeFiscal: unidade
             ? {

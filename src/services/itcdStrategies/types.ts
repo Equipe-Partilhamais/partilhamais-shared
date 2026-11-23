@@ -1,5 +1,6 @@
 
 import { ItcdCalculationMemory } from '../../types';
+import type { SituacaoTabelaItcd } from './perfilUf';
 
 export type ItcdTaxType = 'CAUSA_MORTIS' | 'DOACAO';
 
@@ -18,6 +19,8 @@ export type ItcdWarningCategory =
     | 'TABELA_NAO_HOMOLOGADA'
     | 'INDICE_FISCAL'
     | 'COMPETENCIA'
+    /** Sobre que base o imposto incidiu: quinhão sem beneficiário, abatimento de dívidas. */
+    | 'BASE_CALCULO'
     | 'PRAZO'
     | 'OUTRO';
 
@@ -59,6 +62,18 @@ export interface ItcdResult {
     confiabilidade?: ItcdReliability;
     /** O que falta homologar nesta UF/tipo de fato gerador. Só vem quando NAO_CONFIGURADA. */
     pendenciaHomologacao?: string;
+    /**
+     * CALC-06: em que situação está a tabela codificada (pesquisada, com divergência conhecida,
+     * faixas estimadas ou referência). Preenchido centralmente por `calculateItcdForState`.
+     */
+    situacaoTabela?: SituacaoTabelaItcd;
+    /**
+     * Vigência registrada da tabela frente à data do fato gerador. ANTERIOR: a tabela do código
+     * não se aplica nessa data e a anterior não está no repositório — resultado indeterminado.
+     * Ausente quando o repositório não registra início de vigência para a UF.
+     */
+    vigencia?: 'VIGENTE' | 'ANTERIOR' | 'SEM_DATA';
+    vigenciaDesde?: string;
 }
 
 export interface ItcdStrategyParams {

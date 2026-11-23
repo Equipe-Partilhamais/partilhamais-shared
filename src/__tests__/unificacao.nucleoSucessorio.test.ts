@@ -214,8 +214,12 @@ describe('fatores de meação e marco de competência', () => {
         expect(getPrivateEstateFactor('COMUNHAO_PARCIAL', true)).toBe(1);
     });
 
-    it('comunhão universal mea também o particular', () => {
-        expect(getPrivateEstateFactor('COMUNHAO_UNIVERSAL', true)).toBe(0.5);
+    // CALC-02: este teste afirmava o contrário ("comunhão universal mea também o particular") e
+    // congelava o erro. O particular na comunhão universal é o que a lei exclui da comunhão
+    // (CC, art. 1.668); a meação só alcança o comum (art. 1.667).
+    it('comunhão universal NÃO mea o particular: o fator do acervo particular é 1 em todo regime', () => {
+        expect(getPrivateEstateFactor('COMUNHAO_UNIVERSAL', true)).toBe(1);
+        expect(getCommonEstateFactor('COMUNHAO_UNIVERSAL', true)).toBe(0.5);
     });
 
     it('EC 132/2023: o critério muda em 20/12/2023', () => {

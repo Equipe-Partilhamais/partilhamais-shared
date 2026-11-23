@@ -207,14 +207,11 @@ const getCommonEstateFactor = (regime, hasSpouse) => {
     return 1;
 };
 exports.getCommonEstateFactor = getCommonEstateFactor;
-const getPrivateEstateFactor = (regime, hasSpouse) => {
-    if (!hasSpouse)
-        return 1;
-    if (regime === 'COMUNHAO_UNIVERSAL') {
-        return 0.5;
-    }
-    return 1;
-};
+// CALC-02: o acervo PARTICULAR integra inteiro o espólio em todo regime. Na comunhão universal
+// o fator era 0,5 — metade do particular saía como meação —, mas o particular nesse regime é
+// exatamente o que a lei exclui da comunhão (CC, art. 1.668), e a meação só alcança o comum
+// (CC, art. 1.667). A assinatura fica (regime, cônjuge) para os chamadores não mudarem.
+const getPrivateEstateFactor = (_regime, _hasSpouse) => 1;
 exports.getPrivateEstateFactor = getPrivateEstateFactor;
 /** Rateia o passivo do espólio entre as UFs proporcionalmente ao acervo de cada uma. */
 const allocateDebtByState = (valuesByState, totalDebt) => {

@@ -2,11 +2,16 @@
 import { UF } from '../../types';
 import { ItcdStrategy, ItcdTaxType, ItcdResult, ItcdReliability } from './types';
 import { getHomologacao, getPendencia, isHomologada } from './homologacao';
+import { getPerfilItcdUf, situacaoDaVigencia } from './perfilUf';
 import {
     avisoAliquotaDoacaoNaoHomologada,
+    avisoDoacaoMesmaTabelaPorLei,
     avisoIndiceForaDaVigencia,
     avisoIndiceNaoConferido,
-    avisoTabelaNaoHomologada,
+    avisoTabelaForaDaVigencia,
+    avisoTabelaPorSituacao,
+    avisoVigenciaSemData,
+    pendenciaPorSituacao,
 } from './warnings';
 import { MGStrategy } from './states/MG';
 import { SPStrategy } from './states/SP';
@@ -40,6 +45,7 @@ import { DefaultStrategy } from './states/Default';
 export * from './homologacao';
 export * from './types';
 export * from './warnings';
+export * from './perfilUf';
 
 const strategies: Record<string, ItcdStrategy> = {
     'AC': ACStrategy,
@@ -79,10 +85,11 @@ const appendWarning = (current: string | undefined, extra: string): string =>
  * consumidor é obrigado a exibir. Fica aqui, e não em cada UF, para que nenhuma estratégia
  * possa "esquecer" de se declarar não homologada.
  */
-const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult): ItcdResult => {
+const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult, deathDate?: string): ItcdResult => {
     const registro = getHomologacao(uf);
     const homologada = isHomologada(uf, taxType);
     const confiabilidade: ItcdReliability = homologada ? 'HOMOLOGADA' : 'NAO_CONFIGURADA';
+    const perfil = getPerfilItcdUf(uf);
 
     let warningMessage = result.warningMessage;
     let pendenciaHomologacao: string | undefined;
@@ -90,17 +97,28 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
     if (!homologada) {
         if (!registro) {
             pendenciaHomologacao = `UF "${uf}" sem estratégia própria; cálculo feito pela regra padrão nacional (4%).`;
-        } else {
+        } else if (taxType === 'DOACAO' && isHomologada(uf, 'CAUSA_MORTIS')) {
+            // Com a causa mortis conferida, o que falta é especificamente a tabela de doação.
             pendenciaHomologacao = getPendencia(uf, taxType);
+        } else {
+            // CALC-06: a pendência diz o que falta conforme a situação da tabela.
+            pendenciaHomologacao = pendenciaPorSituacao(perfil);
         }
 
-        if (taxType === 'DOACAO') {
+        // CALC-10: "valor calculado com a regra de causa mortis" só é verdade onde não há tabela
+        // de doação. Nas UFs com tabela própria (AL, BA, MG, PB, RS) a frase era falsa; a ressalva
+        // de tabela não conferida, logo abaixo, continua valendo para elas.
+        if (taxType === 'DOACAO' && perfil.tabelaDoacao === 'NAO_REGISTRADA') {
             // O motor devolve o número da regra de causa mortis; sem este aviso o usuário
             // recebe um cálculo de doação com alíquota que ninguém conferiu.
             warningMessage = appendWarning(warningMessage, avisoAliquotaDoacaoNaoHomologada(uf));
         }
+        if (taxType === 'DOACAO' && perfil.tabelaDoacao === 'MESMA_DA_CAUSA_MORTIS') {
+            warningMessage = appendWarning(warningMessage, avisoDoacaoMesmaTabelaPorLei(uf));
+        }
 
-        warningMessage = appendWarning(warningMessage, avisoTabelaNaoHomologada(uf));
+        // CALC-06: ressalva específica da situação da tabela, e não a mesma para as 27 UFs.
+        warningMessage = appendWarning(warningMessage, avisoTabelaPorSituacao(uf, perfil));
     }
 
     const unidade = result.fiscalUnitUsed;
@@ -127,15 +145,26 @@ const stampReliability = (uf: string, taxType: ItcdTaxType, result: ItcdResult):
         }
     }
 
+    // Revisão: a vigência registrada da redação codificada é conferida contra a data do fato
+    // gerador. Vale com ou sem homologação — tabela conferida fora da vigência continua errada.
+    const vigencia = situacaoDaVigencia(uf, deathDate);
+    if (vigencia === 'ANTERIOR') {
+        warningMessage = appendWarning(warningMessage, avisoTabelaForaDaVigencia(uf, perfil.vigenciaDesde!, deathDate!, perfil.fonteVigencia));
+    } else if (vigencia === 'SEM_DATA') {
+        warningMessage = appendWarning(warningMessage, avisoVigenciaSemData(uf, perfil.vigenciaDesde!, perfil.fonteVigencia));
+    }
+
     return {
         ...result,
         confiabilidade,
         warningMessage: warningMessage || undefined,
         pendenciaHomologacao,
+        situacaoTabela: perfil.situacaoTabela,
+        ...(vigencia === 'SEM_REGISTRO' ? {} : { vigencia, vigenciaDesde: perfil.vigenciaDesde }),
     };
 };
 
 export const calculateItcdForState = (uf: UF, baseValue: number, settings: any, deathDate?: string, taxType: ItcdTaxType = 'CAUSA_MORTIS'): ItcdResult => {
     const strategy = strategies[uf] || DefaultStrategy;
-    return stampReliability(uf, taxType, strategy.calculate({ baseValue, settings, deathDate, taxType }));
+    return stampReliability(uf, taxType, strategy.calculate({ baseValue, settings, deathDate, taxType }), deathDate);
 };
