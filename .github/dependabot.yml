@@ -1,4 +1,4 @@
-# Dependabot (auditoria INFRA-04): atualizações semanais das dependências npm
+# Dependabot: atualizações semanais das dependências npm
 # (só de desenvolvimento: typescript e vitest) e das actions do GitHub.
 #
 # Os PRs de versão vão para a `develop`. Os alertas de SEGURANÇA sempre abrem contra
